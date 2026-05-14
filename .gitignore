@@ -1,0 +1,65 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Local environment / secrets (track an example file if you use this pattern)
+.env
+.env.*
+!.env.example
+!.env.template
+
+# FVM: ignore the SDK symlink; keep .fvm/fvm_config.json in version control
+.fvm/flutter_sdk
+
+# Legacy Pub (harmless if absent)
+.flutter-plugins
+.packages
+
+# Android Studio / profiling
+*.hprof
+
+# Gradle outputs under android/ (Flutter’s own outputs live in /build/)
+/android/build/
+/android/app/build/
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
