@@ -1,17 +1,19 @@
-// Basic smoke test for Car Sharing shell.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_application_1/main.dart';
+import 'package:flutter_application_1/app/car_sharing_app.dart';
 
 void main() {
-  testWidgets('bottom navigation shell is shown', (WidgetTester tester) async {
-    await tester.pumpWidget(const MyApp());
-    await tester.pump();
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-    expect(find.byType(BottomNavigationBar), findsOneWidget);
-    expect(find.text('Catalog'), findsWidgets);
-    expect(find.text('Wallet'), findsOneWidget);
+  testWidgets('shows login when no saved session', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(const CarSharingApp());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Sign in'), findsWidgets);
+    expect(find.byType(NavigationBar), findsNothing);
   });
 }

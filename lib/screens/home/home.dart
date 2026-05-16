@@ -6,7 +6,9 @@ import '../profile/profile_screen.dart';
 import '../wallet/wallet_screen.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, required this.onSignedOut});
+
+  final VoidCallback onSignedOut;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -28,28 +30,31 @@ class _HomePageState extends State<HomePage> {
           const CatalogScreen(),
           BookingsScreen(onOpenCatalog: _openCatalog),
           const WalletScreen(),
-          const ProfileScreen(),
+          ProfileScreen(onSignedOut: widget.onSignedOut),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _selectedIndex,
-        onTap: (i) => setState(() => _selectedIndex = i),
-        items: const [
-          BottomNavigationBarItem(
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+        destinations: const [
+          NavigationDestination(
             icon: Icon(Icons.grid_view_outlined),
+            selectedIcon: Icon(Icons.grid_view_rounded),
             label: 'Catalog',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.event_note_outlined),
+            selectedIcon: Icon(Icons.event_note_rounded),
             label: 'Bookings',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet_rounded),
             label: 'Wallet',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person_rounded),
             label: 'Profile',
           ),
         ],

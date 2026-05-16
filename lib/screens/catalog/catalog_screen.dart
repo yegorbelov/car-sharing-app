@@ -66,108 +66,139 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Catalog')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-        children: [
-          TextField(
-            decoration: InputDecoration(
-              hintText: 'City, model…',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              filled: true,
-            ),
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar.large(
+            floating: true,
+            title: const Text('Catalog'),
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: List.generate(_chipLabels.length, (i) {
-              final selected = _selectedChipIndex == i;
-              return FilterChip(
-                label: Text(_chipLabels[i]),
-                selected: selected,
-                onSelected: (_) {
-                  setState(() {
-                    _selectedChipIndex = selected ? null : i;
-                  });
-                },
-              );
-            }),
-          ),
-          const SizedBox(height: 16),
-          ..._cars.map(
-            (c) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Card(
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () {},
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const SizedBox(
-                            width: 72,
-                            height: 72,
-                            child: Icon(Icons.directions_car, size: 36),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                c.title,
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                c.subtitle,
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.star,
-                                    size: 18,
-                                    color: Theme.of(context).colorScheme.primary,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(c.rating),
-                                  const Spacer(),
-                                  Text(
-                                    c.pricePerDay,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelLarge
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    decoration: InputDecoration(
+                      hintText: 'City, model…',
+                      prefixIcon: const Icon(Icons.search_rounded),
                     ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: List.generate(_chipLabels.length, (i) {
+                      final selected = _selectedChipIndex == i;
+                      return FilterChip(
+                        label: Text(_chipLabels[i]),
+                        selected: selected,
+                        onSelected: (_) {
+                          setState(() {
+                            _selectedChipIndex = selected ? null : i;
+                          });
+                        },
+                      );
+                    }),
+                  ),
+                ],
               ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            sliver: SliverList.separated(
+              itemCount: _cars.length,
+              separatorBuilder: (_, unused) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final c = _cars[index];
+                return Material(
+                  color: cs.surfaceContainerLowest,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () {},
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  cs.primaryContainer,
+                                  cs.tertiaryContainer,
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const SizedBox(
+                              width: 76,
+                              height: 76,
+                              child: Icon(Icons.directions_car_rounded, size: 36),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  c.title,
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  c.subtitle,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                      ),
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Icon(Icons.star_rounded, size: 20, color: cs.primary),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      c.rating,
+                                      style: Theme.of(context).textTheme.labelLarge,
+                                    ),
+                                    const Spacer(),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: cs.primaryContainer,
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        c.pricePerDay,
+                                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: cs.onPrimaryContainer,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],

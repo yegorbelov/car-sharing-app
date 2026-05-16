@@ -1,99 +1,142 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-String get _apiBaseUrl {
-  if (Platform.isAndroid) {
-    return 'http://10.0.2.2:1323';
-  }
-  return 'http://localhost:1323';
-}
+import '../../core/api_config.dart';
+import '../../core/auth_storage.dart';
+import '../../models/auth_user.dart';
+import '../../services/auth_api.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, required this.onSignedOut});
+
+  final VoidCallback onSignedOut;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  String? _body;
-  String? _error;
-  bool _loading = true;
+  AuthUser? _user;
+  String? _healthBody;
+  String? _healthError;
+  bool _healthLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadUser();
+    _loadHealth();
   }
 
-  Future<void> _load() async {
+  Future<void> _loadUser() async {
+    final cached = await AuthStorage.getUser();
+    if (!mounted) return;
+    setState(() => _user = cached);
+    final token = await AuthStorage.getToken();
+    if (token == null || !mounted) return;
+    try {
+      final fresh = await AuthApi.fetchMe(token);
+      if (!mounted) return;
+      await AuthStorage.saveSession(accessToken: token, user: fresh);
+      setState(() => _user = fresh);
+    } catch (_) {
+      /* keep cached user */
+    }
+  }
+
+  Future<void> _loadHealth() async {
     setState(() {
-      _loading = true;
-      _error = null;
-      _body = null;
+      _healthLoading = true;
+      _healthError = null;
+      _healthBody = null;
     });
-    final uri = Uri.parse('$_apiBaseUrl/api/v1/health');
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/health');
     try {
       final response = await http.get(uri);
       if (!mounted) return;
       if (response.statusCode == 200) {
         setState(() {
-          _body = response.body;
-          _loading = false;
+          _healthBody = response.body;
+          _healthLoading = false;
         });
       } else {
         setState(() {
-          _error = 'HTTP ${response.statusCode}: ${response.body}';
-          _loading = false;
+          _healthError = 'HTTP ${response.statusCode}: ${response.body}';
+          _healthLoading = false;
         });
       }
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
-        _loading = false;
+        _healthError = e.toString();
+        _healthLoading = false;
       });
     }
   }
 
+  Future<void> _signOut() async {
+    await AuthStorage.clear();
+    if (!mounted) return;
+    widget.onSignedOut();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final u = _user;
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 32,
-                child: Text(
-                  'JD',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'John Doe',
-                      style: Theme.of(context).textTheme.titleMedium,
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 36,
+                    backgroundColor: cs.primaryContainer,
+                    foregroundColor: cs.onPrimaryContainer,
+                    child: Text(
+                      u?.initials ?? '—',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Roles: owner, renter',
-                      style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          u?.fullName ?? 'Signed in',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          u?.email ?? '',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Owner & renter',
+                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                color: cs.primary,
+                              ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           Card(
             child: Column(
               children: [
@@ -120,10 +163,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 12),
+          FilledButton.tonalIcon(
+            onPressed: _signOut,
+            icon: const Icon(Icons.logout_rounded),
+            label: const Text('Sign out'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+            ),
+          ),
+          const SizedBox(height: 28),
           Text(
             'API health',
-            style: Theme.of(context).textTheme.titleSmall,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Card(
@@ -136,36 +188,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          '$_apiBaseUrl/api/v1/health',
+                          '${apiBaseUrl()}/api/v1/health',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
                       IconButton(
-                        onPressed: _loading ? null : _load,
+                        onPressed: _healthLoading ? null : _loadHealth,
                         icon: const Icon(Icons.refresh),
                         tooltip: 'Refresh',
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  if (_loading)
+                  if (_healthLoading)
                     const Center(
                       child: Padding(
                         padding: EdgeInsets.all(16),
                         child: CircularProgressIndicator(),
                       ),
                     )
-                  else if (_error != null)
+                  else if (_healthError != null)
                     SelectableText(
-                      _error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
+                      _healthError!,
+                      style: TextStyle(color: cs.error),
                     )
                   else
                     SelectableText(
-                      _body ?? '',
-                      style: Theme.of(context).textTheme.bodyLarge,
+                      _healthBody ?? '',
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                 ],
               ),
