@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
-import '../../core/api_config.dart';
 import '../../core/auth_storage.dart';
 import '../../models/auth_user.dart';
 import '../../services/auth_api.dart';
+import 'create_listing_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key, required this.onSignedOut});
@@ -17,15 +16,11 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   AuthUser? _user;
-  String? _healthBody;
-  String? _healthError;
-  bool _healthLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadUser();
-    _loadHealth();
   }
 
   Future<void> _loadUser() async {
@@ -41,36 +36,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _user = fresh);
     } catch (_) {
       /* keep cached user */
-    }
-  }
-
-  Future<void> _loadHealth() async {
-    setState(() {
-      _healthLoading = true;
-      _healthError = null;
-      _healthBody = null;
-    });
-    final uri = Uri.parse('${apiBaseUrl()}/api/v1/health');
-    try {
-      final response = await http.get(uri);
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        setState(() {
-          _healthBody = response.body;
-          _healthLoading = false;
-        });
-      } else {
-        setState(() {
-          _healthError = 'HTTP ${response.statusCode}: ${response.body}';
-          _healthLoading = false;
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _healthError = e.toString();
-        _healthLoading = false;
-      });
     }
   }
 
@@ -141,6 +106,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               children: [
                 ListTile(
+                  leading: const Icon(Icons.add_circle_outline_rounded),
+                  title: const Text('Create listing'),
+                  subtitle: const Text('Add a car to the catalog'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    final created = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(builder: (_) => const CreateListingScreen()),
+                    );
+                    if (!context.mounted) return;
+                    if (created == true) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Listing published. Open Catalog to see it.')),
+                      );
+                    }
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
                   leading: const Icon(Icons.notifications_outlined),
                   title: const Text('Notifications'),
                   trailing: const Icon(Icons.chevron_right),
@@ -170,55 +153,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             label: const Text('Sign out'),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
-            ),
-          ),
-          const SizedBox(height: 28),
-          Text(
-            'API health',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${apiBaseUrl()}/api/v1/health',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: _healthLoading ? null : _loadHealth,
-                        icon: const Icon(Icons.refresh),
-                        tooltip: 'Refresh',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (_healthLoading)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: CircularProgressIndicator(),
-                      ),
-                    )
-                  else if (_healthError != null)
-                    SelectableText(
-                      _healthError!,
-                      style: TextStyle(color: cs.error),
-                    )
-                  else
-                    SelectableText(
-                      _healthBody ?? '',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                ],
-              ),
             ),
           ),
         ],

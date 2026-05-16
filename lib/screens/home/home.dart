@@ -27,9 +27,9 @@ class _HomePageState extends State<HomePage> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          const CatalogScreen(),
-          BookingsScreen(onOpenCatalog: _openCatalog),
-          const WalletScreen(),
+          CatalogScreen(tabVisible: _selectedIndex == 0),
+          BookingsScreen(onOpenCatalog: _openCatalog, tabVisible: _selectedIndex == 1),
+          WalletScreen(tabVisible: _selectedIndex == 2),
           ProfileScreen(onSignedOut: widget.onSignedOut),
         ],
       ),

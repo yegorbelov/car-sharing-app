@@ -1,42 +1,65 @@
 import 'package:flutter/material.dart';
 
-class _WalletRow {
-  const _WalletRow({
-    required this.title,
-    required this.subtitle,
-    required this.amount,
-    required this.icon,
-  });
+import '../../models/rental_deal.dart';
+import '../../services/deals_api.dart';
 
-  final String title;
-  final String subtitle;
-  final String amount;
-  final IconData icon;
+class WalletScreen extends StatefulWidget {
+  const WalletScreen({super.key, required this.tabVisible});
+
+  final bool tabVisible;
+
+  @override
+  State<WalletScreen> createState() => _WalletScreenState();
 }
 
-class WalletScreen extends StatelessWidget {
-  const WalletScreen({super.key});
+class _WalletScreenState extends State<WalletScreen> {
+  WalletData? _data;
+  bool _loading = true;
+  String? _error;
 
-  static const List<_WalletRow> _rows = [
-    _WalletRow(
-      title: 'Hold for booking',
-      subtitle: 'May 16, 2026',
-      amount: '−\$50.00',
-      icon: Icons.lock_clock_rounded,
-    ),
-    _WalletRow(
-      title: 'Top-up',
-      subtitle: 'May 10, 2026',
-      amount: '+\$100.00',
-      icon: Icons.add_circle_outline_rounded,
-    ),
-    _WalletRow(
-      title: 'Rental charge',
-      subtitle: 'May 2, 2026',
-      amount: '−\$32.00',
-      icon: Icons.payments_rounded,
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(WalletScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.tabVisible && !oldWidget.tabVisible) {
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final w = await DealsApi.fetchWallet();
+      if (!mounted) return;
+      setState(() {
+        _data = w;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  String _entryLabel(String t) {
+    return switch (t) {
+      'hold' => 'Security hold',
+      'release_hold' => 'Hold released',
+      'payout_owner' => 'Rental payout',
+      _ => t,
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,68 +67,112 @@ class WalletScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Wallet')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Virtual balance',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: cs.onSurfaceVariant,
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(24),
+                    children: [
+                      const SizedBox(height: 48),
+                      Icon(Icons.cloud_off_outlined, size: 48, color: cs.onSurfaceVariant),
+                      const SizedBox(height: 12),
+                      Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: cs.onSurfaceVariant)),
+                      const SizedBox(height: 16),
+                      Center(child: FilledButton(onPressed: _load, child: const Text('Retry'))),
+                    ],
+                  )
+                : ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    children: [
+                      // Balance card
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(22),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Available balance',
+                                style: Theme.of(context).textTheme.labelLarge?.copyWith(color: cs.onSurfaceVariant),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '\$${_data!.balance.toStringAsFixed(2)}',
+                                style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: -1,
+                                      color: cs.primary,
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Active deals reduce your available balance until the trip completes or is cancelled.',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
                         ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '\$124.50',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: -0.5,
+                      ),
+                      const SizedBox(height: 18),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(
+                          'Recent transactions',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                         ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Educational mock balance (no real payments)',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: 8),
+                      if (_data!.recent.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Center(
+                            child: Column(
+                              children: [
+                                Icon(Icons.receipt_long_outlined, size: 40, color: cs.onSurfaceVariant),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'No transactions yet',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        ..._data!.recent.map(
+                          (r) => Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: r.deltaCents < 0 ? cs.errorContainer : cs.primaryContainer,
+                                child: Icon(
+                                  r.deltaCents < 0 ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                                  size: 18,
+                                  color: r.deltaCents < 0 ? cs.onErrorContainer : cs.onPrimaryContainer,
+                                ),
+                              ),
+                              title: Text(_entryLabel(r.entryType)),
+                              subtitle: Text(
+                                r.note,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: Text(
+                                '${r.deltaCents < 0 ? '−' : '+'}​\$${(r.deltaCents.abs() / 100).toStringAsFixed(2)}',
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: r.deltaCents < 0 ? cs.error : cs.primary,
+                                    ),
+                              ),
+                            ),
+                          ),
                         ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            'Recent activity',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          ..._rows.map(
-            (r) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Card(
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: cs.surfaceContainerHigh,
-                    child: Icon(r.icon, color: cs.primary),
-                  ),
-                  title: Text(r.title),
-                  subtitle: Text(r.subtitle),
-                  trailing: Text(
-                    r.amount,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

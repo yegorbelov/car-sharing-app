@@ -163,6 +163,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     prefixIcon: Icon(Icons.lock_outline),
                   ),
                   validator: (v) {
+                    if (v == null || v.isEmpty) return 'Required';
                     if (v != _password.text) return 'Passwords do not match';
                     return null;
                   },
