@@ -5,6 +5,25 @@ import 'package:http/http.dart' as http;
 import '../core/api_config.dart';
 import '../core/auth_storage.dart';
 
+class VehiclePhotoUploadResult {
+  const VehiclePhotoUploadResult({required this.photoUrl, required this.photoUrls});
+
+  final String photoUrl;
+  final List<String> photoUrls;
+
+  factory VehiclePhotoUploadResult.fromJson(Map<String, dynamic> j) {
+    final raw = j['photoUrls'];
+    var urls = <String>[];
+    if (raw is List) {
+      urls = raw.map((e) => e.toString()).toList();
+    }
+    return VehiclePhotoUploadResult(
+      photoUrl: (j['photoUrl'] as String?) ?? '',
+      photoUrls: urls,
+    );
+  }
+}
+
 class VehiclesApi {
   VehiclesApi._();
 
@@ -24,6 +43,16 @@ class VehiclesApi {
     required String className,
     required double pricePerDay,
     double? rating,
+    required int mileageKm,
+    required int modelYear,
+    required String transmission,
+    required String fuelType,
+    required String drivetrain,
+    required int engineCc,
+    required String exteriorColor,
+    required String conditionSummary,
+    required String techNotes,
+    required String vin,
   }) async {
     final token = await AuthStorage.getToken();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
@@ -34,6 +63,16 @@ class VehiclesApi {
       'city': city.trim(),
       'class': className.trim(),
       'pricePerDay': pricePerDay,
+      'mileageKm': mileageKm,
+      'modelYear': modelYear,
+      'transmission': transmission.trim().toLowerCase(),
+      'fuelType': fuelType.trim().toLowerCase(),
+      'drivetrain': drivetrain.trim().toLowerCase(),
+      'engineCc': engineCc,
+      'exteriorColor': exteriorColor.trim(),
+      'conditionSummary': conditionSummary.trim(),
+      'techNotes': techNotes.trim(),
+      'vin': vin.trim().toUpperCase(),
     };
     if (rating != null) body['rating'] = rating;
 
@@ -57,8 +96,8 @@ class VehiclesApi {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
-  /// Upload a cover photo for a vehicle (owner only). Returns the photo URL.
-  static Future<String> uploadVehiclePhoto({
+  /// Append a photo for a vehicle (owner only, max 10). Returns updated gallery.
+  static Future<VehiclePhotoUploadResult> uploadVehiclePhoto({
     required int vehicleId,
     required String filePath,
   }) async {
@@ -82,6 +121,6 @@ class VehiclesApi {
       throw Exception(msg);
     }
     final body = jsonDecode(res.body) as Map<String, dynamic>;
-    return (body['photoUrl'] as String?) ?? '';
+    return VehiclePhotoUploadResult.fromJson(body);
   }
 }

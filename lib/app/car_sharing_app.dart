@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../core/auth_storage.dart';
-import '../screens/auth/login_screen.dart';
 import '../screens/home/home.dart';
 import '../services/deals_api.dart';
 import 'theme.dart';
@@ -62,9 +61,11 @@ class _CarSharingAppState extends State<CarSharingApp> {
           ? const Scaffold(
               body: Center(child: CircularProgressIndicator()),
             )
-          : _signedIn
-              ? HomePage(onSignedOut: _onSignedOut)
-              : LoginScreen(onSignedIn: _onSignedIn),
+          : HomePage(
+              onSignedOut: _onSignedOut,
+              onSignedIn: _onSignedIn,
+              isGuest: !_signedIn,
+            ),
     );
   }
 }

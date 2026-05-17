@@ -2,18 +2,35 @@ import 'package:flutter/material.dart';
 
 ThemeData buildAppTheme() {
   // Indigo-600: distinctive, premium, not used by typical transport apps.
-  const seed = Color(0xFF4F46E5);
+  const accentBlack = Color(0xFF111111);
+  const lightGrey = Color(0xFFE8E8E8);
+
   final scheme = ColorScheme.fromSeed(
-    seedColor: seed,
+    seedColor: accentBlack,
     brightness: Brightness.light,
     surface: const Color(0xFFF8F9FF),
+    primary: accentBlack,
+    onPrimary: Colors.white,
+    primaryContainer: lightGrey,
+    onPrimaryContainer: accentBlack,
+    secondary: const Color(0xFF444444),
+    onSecondary: Colors.white,
+    secondaryContainer: lightGrey,
+    onSecondaryContainer: accentBlack,
+    tertiary: const Color(0xFF666666),
+    onTertiary: Colors.white,
+    tertiaryContainer: lightGrey,
+    onTertiaryContainer: accentBlack,
   );
 
-  final cardShape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(20));
+  final cardShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(20),
+  );
 
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
+    scaffoldBackgroundColor: scheme.surface,
     splashFactory: InkRipple.splashFactory,
 
     appBarTheme: AppBarTheme(
@@ -31,19 +48,26 @@ ThemeData buildAppTheme() {
     ),
 
     navigationBarTheme: NavigationBarThemeData(
-      height: 66,
+      // M3 default with labels is tall; keep bar visually lower / slimmer.
+      height: 52,
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       indicatorColor: scheme.primaryContainer,
-      backgroundColor: Colors.white,
+      backgroundColor: scheme.surface,
       surfaceTintColor: Colors.transparent,
-      elevation: 12,
-      shadowColor: scheme.shadow.withValues(alpha: 0.15),
+      elevation: 6,
+      shadowColor: scheme.shadow.withValues(alpha: 0.12),
       labelTextStyle: WidgetStateProperty.resolveWith((states) {
-        final base = TextStyle(fontSize: 11, letterSpacing: 0.2);
+        final base = TextStyle(fontSize: 9, letterSpacing: 0.1, height: 1.0);
         if (states.contains(WidgetState.selected)) {
-          return base.copyWith(fontWeight: FontWeight.w700, color: scheme.primary);
+          return base.copyWith(
+            fontWeight: FontWeight.w700,
+            color: scheme.primary,
+          );
         }
-        return base.copyWith(fontWeight: FontWeight.w500, color: scheme.onSurfaceVariant);
+        return base.copyWith(
+          fontWeight: FontWeight.w500,
+          color: scheme.onSurfaceVariant,
+        );
       }),
     ),
 
@@ -84,7 +108,11 @@ ThemeData buildAppTheme() {
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: 0.2),
+        textStyle: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 15,
+          letterSpacing: 0.2,
+        ),
       ),
     ),
 
@@ -118,9 +146,9 @@ ThemeData buildAppTheme() {
 
 /// A reusable gradient decoration used as vehicle/user photo placeholder.
 BoxDecoration cardGradient(ColorScheme cs) => BoxDecoration(
-      gradient: LinearGradient(
-        colors: [cs.primaryContainer, cs.secondaryContainer],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-    );
+  gradient: LinearGradient(
+    colors: [cs.primaryContainer, cs.secondaryContainer],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  ),
+);
