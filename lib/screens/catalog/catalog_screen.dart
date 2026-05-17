@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/api_config.dart';
 import '../../models/vehicle.dart';
 import '../../services/vehicles_api.dart';
 import 'vehicle_detail_screen.dart';
@@ -205,18 +206,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [cs.primaryContainer, cs.tertiaryContainer],
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: const SizedBox(
-                                  width: 76,
-                                  height: 76,
-                                  child: Icon(Icons.directions_car_rounded, size: 36),
-                                ),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(14),
+                                child: c.photoUrl.isNotEmpty
+                                    ? Image.network(
+                                        fullImageUrl(c.photoUrl),
+                                        width: 76,
+                                        height: 76,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stack) => _PlaceholderBox(cs: cs),
+                                      )
+                                    : _PlaceholderBox(cs: cs),
                               ),
                               const SizedBox(width: 14),
                               Expanded(
@@ -268,6 +268,29 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _PlaceholderBox extends StatelessWidget {
+  const _PlaceholderBox({required this.cs});
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 76,
+      height: 76,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [cs.primaryContainer, cs.secondaryContainer],
+        ),
+      ),
+      child: Icon(
+        Icons.directions_car_rounded,
+        size: 36,
+        color: cs.onPrimaryContainer.withValues(alpha: 0.6),
       ),
     );
   }

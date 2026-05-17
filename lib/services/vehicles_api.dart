@@ -26,9 +26,8 @@ class VehiclesApi {
     double? rating,
   }) async {
     final token = await AuthStorage.getToken();
-    if (token == null || token.isEmpty) {
-      throw StateError('not_signed_in');
-    }
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
     final uri = Uri.parse('${apiBaseUrl()}/api/v1/vehicles');
     final body = <String, dynamic>{
       'title': title.trim(),
@@ -36,9 +35,8 @@ class VehiclesApi {
       'class': className.trim(),
       'pricePerDay': pricePerDay,
     };
-    if (rating != null) {
-      body['rating'] = rating;
-    }
+    if (rating != null) body['rating'] = rating;
+
     final res = await http.post(
       uri,
       headers: {
@@ -57,5 +55,33 @@ class VehiclesApi {
       throw Exception(msg);
     }
     return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  /// Upload a cover photo for a vehicle (owner only). Returns the photo URL.
+  static Future<String> uploadVehiclePhoto({
+    required int vehicleId,
+    required String filePath,
+  }) async {
+    final token = await AuthStorage.getToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/vehicles/$vehicleId/photo');
+    final request = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = 'Bearer $token'
+      ..headers['Accept'] = 'application/json'
+      ..files.add(await http.MultipartFile.fromPath('photo', filePath));
+
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode != 200) {
+      String msg = res.body;
+      try {
+        final m = jsonDecode(res.body);
+        if (m is Map && m['error'] is String) msg = m['error'] as String;
+      } catch (_) {}
+      throw Exception(msg);
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (body['photoUrl'] as String?) ?? '';
   }
 }

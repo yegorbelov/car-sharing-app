@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../core/api_config.dart';
+import '../core/auth_storage.dart';
 import '../models/auth_user.dart';
 
 class AuthApiException implements Exception {
@@ -87,6 +88,26 @@ class AuthApi {
       throw AuthApiException(res.statusCode, 'invalid_response');
     }
     return AuthUser.fromJson(u);
+  }
+
+  /// Upload a new avatar for the current user. Returns the updated user.
+  static Future<String> uploadAvatar(String filePath) async {
+    final token = await AuthStorage.getToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/auth/avatar');
+    final request = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = 'Bearer $token'
+      ..headers['Accept'] = 'application/json'
+      ..files.add(await http.MultipartFile.fromPath('photo', filePath));
+
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode != 200) {
+      throw AuthApiException(res.statusCode, _errBody(res.body));
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (body['avatarUrl'] as String?) ?? '';
   }
 
   static ({String token, AuthUser user}) _parseAuth(String body) {

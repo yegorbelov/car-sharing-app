@@ -3,14 +3,19 @@ class AuthUser {
     required this.id,
     required this.email,
     required this.fullName,
+    this.avatarUrl = '',
   });
 
   final int id;
   final String email;
   final String fullName;
+  final String avatarUrl;
 
   String get initials {
-    final parts = fullName.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty);
+    final parts = fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((e) => e.isNotEmpty);
     if (parts.isEmpty) {
       return email.isNotEmpty ? email[0].toUpperCase() : '?';
     }
@@ -27,12 +32,23 @@ class AuthUser {
       id: (j['id'] as num).toInt(),
       email: j['email'] as String,
       fullName: (j['fullName'] as String?)?.trim() ?? '',
+      avatarUrl: (j['avatarUrl'] as String?) ?? '',
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'email': email,
-        'fullName': fullName,
-      };
+    'id': id,
+    'email': email,
+    'fullName': fullName,
+    'avatarUrl': avatarUrl,
+  };
+
+  AuthUser copyWith({String? avatarUrl}) {
+    return AuthUser(
+      id: id,
+      email: email,
+      fullName: fullName,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+    );
+  }
 }

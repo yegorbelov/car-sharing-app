@@ -7,6 +7,7 @@ class Vehicle {
     required this.pricePerDayCents,
     required this.rating,
     this.ownerUserId,
+    this.photoUrl = '',
   });
 
   final int id;
@@ -16,10 +17,20 @@ class Vehicle {
   final int pricePerDayCents;
   final double rating;
   final int? ownerUserId;
+  final String photoUrl;
 
   double get pricePerDay => pricePerDayCents / 100;
 
-  String get subtitle => '$city · $className';
+  String get subtitle => '$city · ${_classLabel(className)}';
+
+  String _classLabel(String c) => switch (c.toLowerCase()) {
+        'sedan' => 'Sedan',
+        'suv' => 'SUV',
+        'economy' => 'Economy',
+        'comfort' => 'Comfort',
+        'business' => 'Business',
+        _ => c,
+      };
 
   factory Vehicle.fromJson(Map<String, dynamic> j) {
     return Vehicle(
@@ -30,6 +41,7 @@ class Vehicle {
       pricePerDayCents: (j['pricePerDayCents'] as num).toInt(),
       rating: (j['rating'] as num).toDouble(),
       ownerUserId: (j['ownerUserId'] as num?)?.toInt(),
+      photoUrl: (j['photoUrl'] as String?) ?? '',
     );
   }
 }
