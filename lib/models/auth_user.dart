@@ -43,11 +43,11 @@ class AuthUser {
     'avatarUrl': avatarUrl,
   };
 
-  AuthUser copyWith({String? avatarUrl}) {
+  AuthUser copyWith({String? fullName, String? avatarUrl}) {
     return AuthUser(
       id: id,
       email: email,
-      fullName: fullName,
+      fullName: fullName ?? this.fullName,
       avatarUrl: avatarUrl ?? this.avatarUrl,
     );
   }

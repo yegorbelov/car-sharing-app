@@ -81,26 +81,67 @@ ThemeData buildAppTheme() {
 
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      fillColor: Colors.white,
+      hoverColor: Colors.white,
+      floatingLabelBehavior: FloatingLabelBehavior.auto,
+      floatingLabelStyle: WidgetStateTextStyle.resolveWith((states) {
+        const base = TextStyle(fontSize: 13, letterSpacing: 0.15, height: 1.2);
+        if (states.contains(WidgetState.error)) {
+          return base.copyWith(color: scheme.error, fontWeight: FontWeight.w700);
+        }
+        if (states.contains(WidgetState.focused)) {
+          return base.copyWith(color: scheme.primary, fontWeight: FontWeight.w700);
+        }
+        return base.copyWith(
+          color: scheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        );
+      }),
+      labelStyle: TextStyle(
+        color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
+        fontWeight: FontWeight.w500,
+        fontSize: 15,
+      ),
+      hintStyle: TextStyle(
+        color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+        fontWeight: FontWeight.w400,
+        fontSize: 15,
+      ),
+      prefixIconColor: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+      suffixIconColor: scheme.onSurfaceVariant,
+      prefixIconConstraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+      suffixIconConstraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFE4E7EF), width: 1.5),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: scheme.primary, width: 2),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: scheme.error),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: scheme.error, width: 1.5),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: scheme.error, width: 2),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      labelStyle: TextStyle(color: scheme.onSurfaceVariant),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+    ),
+
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: scheme.primary,
+      selectionColor: scheme.primary.withValues(alpha: 0.18),
+      selectionHandleColor: scheme.primary,
     ),
 
     filledButtonTheme: FilledButtonThemeData(

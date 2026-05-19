@@ -8,6 +8,7 @@ import '../../core/auth_storage.dart';
 import '../../models/auth_user.dart';
 import '../../services/auth_api.dart';
 import 'create_listing_screen.dart';
+import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key, required this.onSignedOut});
@@ -72,166 +73,92 @@ class _ProfileScreenState extends State<ProfileScreen> {
     widget.onSignedOut();
   }
 
+  Future<void> _openEditProfile() async {
+    final u = _user;
+    if (u == null) return;
+    final updated = await Navigator.of(context).push<AuthUser>(
+      MaterialPageRoute(builder: (_) => EditProfileScreen(user: u)),
+    );
+    if (!mounted || updated == null) return;
+    setState(() => _user = updated);
+  }
+
   @override
   Widget build(BuildContext context) {
     final u = _user;
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        padding: EdgeInsets.zero,
         children: [
-          // ── Avatar card ────────────────────────────────────────────────
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: LinearGradient(
-                colors: [cs.primaryContainer, cs.secondaryContainer],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: _pickAvatar,
-                  child: Stack(
-                    children: [
-                      Container(
-                        width: 76,
-                        height: 76,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                        ),
-                        child: ClipOval(
-                          child: _uploadingAvatar
-                              ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-                              : _buildAvatar(u, cs),
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: cs.primary,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          child: const Icon(Icons.camera_alt_rounded, size: 14, color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 18),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        u?.fullName ?? 'Your profile',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 18,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        u?.email ?? '',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: cs.onPrimaryContainer.withValues(alpha: 0.75),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: cs.primary.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          'Owner & Renter',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: cs.primary,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+          _ProfileHeader(
+            user: u,
+            uploadingAvatar: _uploadingAvatar,
+            onPickAvatar: _pickAvatar,
+            onEdit: u != null ? _openEditProfile : null,
+            avatarBuilder: () => _buildAvatar(u, cs),
           ),
-
-          const SizedBox(height: 20),
-
-          // ── Menu ───────────────────────────────────────────────────────
-          Card(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
             child: Column(
               children: [
-                _MenuItem(
-                  icon: Icons.add_circle_outline_rounded,
-                  iconColor: cs.primary,
-                  title: 'Create listing',
-                  subtitle: 'Add your car to the catalog',
-                  onTap: () async {
-                    final created = await Navigator.of(context).push<bool>(
-                      MaterialPageRoute(builder: (_) => const CreateListingScreen()),
-                    );
-                    if (!context.mounted) return;
-                    if (created == true) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Listing published! Check the Catalog.')),
-                      );
-                    }
-                  },
+                Card(
+                  child: Column(
+                    children: [
+                      _MenuItem(
+                        icon: Icons.add_circle_outline_rounded,
+                        iconColor: cs.primary,
+                        title: 'Create listing',
+                        subtitle: 'Add your car to the catalog',
+                        onTap: () async {
+                          final created = await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(builder: (_) => const CreateListingScreen()),
+                          );
+                          if (!context.mounted) return;
+                          if (created == true) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Listing published! Check the Catalog.')),
+                            );
+                          }
+                        },
+                      ),
+                      const Divider(),
+                      _MenuItem(
+                        icon: Icons.notifications_outlined,
+                        iconColor: cs.tertiary,
+                        title: 'Notifications',
+                        onTap: () {},
+                      ),
+                      const Divider(),
+                      _MenuItem(
+                        icon: Icons.lock_outline_rounded,
+                        iconColor: cs.secondary,
+                        title: 'Security',
+                        onTap: () {},
+                      ),
+                      const Divider(),
+                      _MenuItem(
+                        icon: Icons.help_outline_rounded,
+                        iconColor: cs.onSurfaceVariant,
+                        title: 'Help & Support',
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
                 ),
-                const Divider(),
-                _MenuItem(
-                  icon: Icons.notifications_outlined,
-                  iconColor: cs.tertiary,
-                  title: 'Notifications',
-                  onTap: () {},
-                ),
-                const Divider(),
-                _MenuItem(
-                  icon: Icons.lock_outline_rounded,
-                  iconColor: cs.secondary,
-                  title: 'Security',
-                  onTap: () {},
-                ),
-                const Divider(),
-                _MenuItem(
-                  icon: Icons.help_outline_rounded,
-                  iconColor: cs.onSurfaceVariant,
-                  title: 'Help & Support',
-                  onTap: () {},
+                const SizedBox(height: 16),
+                FilledButton.tonalIcon(
+                  onPressed: _signOut,
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text('Sign out'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50),
+                    backgroundColor: cs.errorContainer,
+                    foregroundColor: cs.onErrorContainer,
+                  ),
                 ),
               ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          FilledButton.tonalIcon(
-            onPressed: _signOut,
-            icon: const Icon(Icons.logout_rounded),
-            label: const Text('Sign out'),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(50),
-              backgroundColor: cs.errorContainer,
-              foregroundColor: cs.onErrorContainer,
             ),
           ),
         ],
@@ -253,14 +180,246 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _initialsWidget(AuthUser? u, ColorScheme cs) {
     return Container(
-      color: cs.primaryContainer,
+      color: const Color(0xFF3D3D52),
       alignment: Alignment.center,
       child: Text(
         u?.initials ?? '—',
-        style: TextStyle(
+        style: const TextStyle(
           fontWeight: FontWeight.w800,
-          fontSize: 22,
-          color: cs.onPrimaryContainer,
+          fontSize: 28,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileHeader extends StatelessWidget {
+  const _ProfileHeader({
+    required this.user,
+    required this.uploadingAvatar,
+    required this.onPickAvatar,
+    required this.avatarBuilder,
+    this.onEdit,
+  });
+
+  final AuthUser? user;
+  final bool uploadingAvatar;
+  final VoidCallback onPickAvatar;
+  final VoidCallback? onEdit;
+  final Widget Function() avatarBuilder;
+
+  static const _headerGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color(0xFF0A0A0F),
+      Color(0xFF151522),
+      Color(0xFF252538),
+    ],
+    stops: [0.0, 0.45, 1.0],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final topPad = MediaQuery.paddingOf(context).top;
+
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: _headerGradient,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 24,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(top: -50, right: -30, child: _glowOrb(160, 0.14)),
+          Positioned(top: 70, left: -55, child: _glowOrb(120, 0.1)),
+          Positioned(bottom: 10, right: 20, child: _glowOrb(90, 0.12)),
+          Positioned(
+            top: topPad + 12,
+            right: 24,
+            child: Icon(
+              Icons.directions_car_filled_rounded,
+              size: 72,
+              color: Colors.white.withValues(alpha: 0.04),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(20, topPad + 12, 20, 28),
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Profile',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white.withValues(alpha: 0.95),
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                GestureDetector(
+                  onTap: onPickAvatar,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: 108,
+                        height: 108,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.35),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            width: 3.5,
+                          ),
+                        ),
+                        child: ClipOval(
+                          child: uploadingAvatar
+                              ? ColoredBox(
+                                  color: Colors.white.withValues(alpha: 0.12),
+                                  child: const Center(
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : avatarBuilder(),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 2,
+                        right: 2,
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFF252538),
+                              width: 2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.2),
+                                blurRadius: 6,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.camera_alt_rounded,
+                            size: 16,
+                            color: Color(0xFF111111),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  user?.fullName ?? 'Your profile',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 20,
+                    letterSpacing: -0.3,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  user?.email ?? '',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.white.withValues(alpha: 0.65),
+                  ),
+                ),
+                if (onEdit != null) ...[
+                  const SizedBox(height: 10),
+                  TextButton.icon(
+                    onPressed: onEdit,
+                    icon: Icon(
+                      Icons.edit_outlined,
+                      size: 16,
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                    label: Text(
+                      'Edit',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      backgroundColor: Colors.white.withValues(alpha: 0.12),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                  ),
+                  child: Text(
+                    'Owner & Renter',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white.withValues(alpha: 0.85),
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _glowOrb(double size, double opacity) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [
+            Colors.white.withValues(alpha: opacity),
+            Colors.white.withValues(alpha: 0),
+          ],
         ),
       ),
     );

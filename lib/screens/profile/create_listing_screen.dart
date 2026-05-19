@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 // ignore_for_file: use_build_context_synchronously
 
 import '../../services/vehicles_api.dart';
+import '../../widgets/app_input.dart';
 
 class CreateListingScreen extends StatefulWidget {
   const CreateListingScreen({super.key});
@@ -237,25 +238,27 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
             TextFormField(
               controller: _title,
               textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
+              decoration: AppInputs.decoration(
+                context,
                 labelText: 'Vehicle make & model',
                 hintText: 'e.g. Toyota Camry 2022',
-                prefixIcon: Icon(Icons.directions_car_outlined),
+                icon: Icons.directions_car_outlined,
               ),
               validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: AppInputs.fieldGap),
             TextFormField(
               controller: _city,
               textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
+              decoration: AppInputs.decoration(
+                context,
                 labelText: 'City',
                 hintText: 'e.g. Moscow',
-                prefixIcon: Icon(Icons.location_on_outlined),
+                icon: Icons.location_on_outlined,
               ),
               validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: AppInputs.fieldGap),
 
             Text(
               'Vehicle class',
@@ -275,15 +278,16 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                   )
                   .toList(),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: AppInputs.fieldGap),
 
             TextFormField(
               controller: _price,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
+              decoration: AppInputs.decoration(
+                context,
                 labelText: 'Price per day (USD)',
                 hintText: 'e.g. 75',
-                prefixIcon: Icon(Icons.attach_money_rounded),
+                icon: Icons.attach_money_rounded,
               ),
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return 'Required';
@@ -309,10 +313,11 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
             TextFormField(
               controller: _mileage,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
+              decoration: AppInputs.decoration(
+                context,
                 labelText: 'Mileage (km)',
                 hintText: 'e.g. 45000',
-                prefixIcon: Icon(Icons.speed_outlined),
+                icon: Icons.speed_outlined,
               ),
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return 'Required';
@@ -321,17 +326,18 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                 return null;
               },
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: AppInputs.fieldGap),
             TextFormField(
               controller: _year,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
+              decoration: AppInputs.decoration(
+                context,
                 labelText: 'Model year (optional)',
                 hintText: 'Leave empty if unknown',
-                prefixIcon: Icon(Icons.calendar_today_outlined),
+                icon: Icons.calendar_today_outlined,
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: AppInputs.fieldGap),
 
             _labeledChips(
               context,
@@ -364,32 +370,35 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
             TextFormField(
               controller: _engineCc,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
+              decoration: AppInputs.decoration(
+                context,
                 labelText: 'Engine displacement (cc)',
                 hintText: '0 if unknown or electric',
-                prefixIcon: Icon(Icons.settings_outlined),
+                icon: Icons.settings_outlined,
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: AppInputs.fieldGap),
             TextFormField(
               controller: _color,
               textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
+              decoration: AppInputs.decoration(
+                context,
                 labelText: 'Exterior color',
                 hintText: 'e.g. Pearl white',
-                prefixIcon: Icon(Icons.palette_outlined),
+                icon: Icons.palette_outlined,
               ),
               validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: AppInputs.fieldGap),
             TextFormField(
               controller: _vin,
               textCapitalization: TextCapitalization.characters,
               maxLength: 17,
-              decoration: const InputDecoration(
+              decoration: AppInputs.decoration(
+                context,
                 labelText: 'VIN (optional)',
                 hintText: 'Up to 17 letters and digits',
-                prefixIcon: Icon(Icons.tag_outlined),
+                icon: Icons.tag_outlined,
               ),
               validator: (v) {
                 final s = (v ?? '').trim().toUpperCase();
@@ -412,14 +421,11 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
               controller: _condition,
               minLines: 3,
               maxLines: 6,
-              decoration: const InputDecoration(
+              decoration: AppInputs.decoration(
+                context,
                 labelText: 'Condition & service history',
                 hintText: 'Scratches, recent service, tires, interior wear…',
                 alignLabelWithHint: true,
-                prefixIcon: Padding(
-                  padding: EdgeInsets.only(bottom: 48),
-                  child: Icon(Icons.fact_check_outlined),
-                ),
               ),
               validator: (v) {
                 final s = (v ?? '').trim();
@@ -428,19 +434,16 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                 return null;
               },
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: AppInputs.fieldGap),
             TextFormField(
               controller: _techNotes,
               minLines: 2,
               maxLines: 8,
-              decoration: const InputDecoration(
+              decoration: AppInputs.decoration(
+                context,
                 labelText: 'Extra technical notes (optional)',
                 hintText: 'Options, winter tires, charging cable, known quirks…',
                 alignLabelWithHint: true,
-                prefixIcon: Padding(
-                  padding: EdgeInsets.only(bottom: 36),
-                  child: Icon(Icons.build_outlined),
-                ),
               ),
               validator: (v) {
                 final s = (v ?? '').trim();

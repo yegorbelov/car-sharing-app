@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../core/api_config.dart';
 import '../../models/vehicle.dart';
+import '../../widgets/app_input.dart';
 import '../../services/vehicles_api.dart';
 import 'vehicle_detail_screen.dart';
 
@@ -313,17 +314,10 @@ class _CatalogSearchBar extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
           child: TextField(
             controller: controller,
-            decoration: InputDecoration(
+            decoration: AppInputs.search(
+              context,
               hintText: 'City, model…',
-              prefixIcon: Padding(
-                padding: const EdgeInsets.all(12),
-                child: SvgPicture.asset(
-                  'assets/icons/search.svg',
-                  width: 22,
-                  height: 22,
-                  colorFilter: ColorFilter.mode(cs.onSurfaceVariant, BlendMode.srcIn),
-                ),
-              ),
+              icon: Icon(Icons.search_rounded, size: 22, color: cs.onSurfaceVariant.withValues(alpha: 0.75)),
             ),
             onChanged: (_) => onQueryChanged(),
           ),

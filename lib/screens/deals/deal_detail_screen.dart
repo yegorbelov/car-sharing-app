@@ -4,6 +4,7 @@ import '../../core/auth_storage.dart';
 import '../../models/auth_user.dart';
 import '../../models/rental_deal.dart';
 import '../../services/deals_api.dart';
+import '../../widgets/app_input.dart';
 
 /// Formats an ISO date/datetime string to "May 16, 2026".
 String _fmtDate(String iso) {
@@ -371,10 +372,7 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
                         minLines: 1,
                         maxLines: 4,
                         textCapitalization: TextCapitalization.sentences,
-                        decoration: const InputDecoration(
-                          hintText: 'Message…',
-                          isDense: true,
-                        ),
+                        decoration: AppInputs.chat(context),
                         onSubmitted: (_) => _send(),
                       ),
                     ),

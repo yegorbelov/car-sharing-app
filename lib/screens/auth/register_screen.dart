@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/auth_storage.dart';
 import '../../services/auth_api.dart';
+import '../../widgets/app_input.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -107,23 +108,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   controller: _name,
                   textInputAction: TextInputAction.next,
                   textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
+                  decoration: AppInputs.decoration(
+                    context,
                     labelText: 'Full name',
-                    prefixIcon: Icon(Icons.person_outline),
+                    icon: Icons.person_outline_rounded,
                   ),
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Required';
                     return null;
                   },
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: AppInputs.fieldGap),
                 TextFormField(
                   controller: _email,
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
+                  decoration: AppInputs.decoration(
+                    context,
                     labelText: 'Email',
-                    prefixIcon: Icon(Icons.mail_outline),
+                    icon: Icons.mail_outlined,
                   ),
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Required';
@@ -131,14 +134,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: AppInputs.fieldGap),
                 TextFormField(
                   controller: _password,
                   obscureText: _obscure,
                   textInputAction: TextInputAction.next,
-                  decoration: InputDecoration(
+                  decoration: AppInputs.decoration(
+                    context,
                     labelText: 'Password',
-                    prefixIcon: const Icon(Icons.lock_outline),
+                    icon: Icons.lock_outline_rounded,
                     suffixIcon: IconButton(
                       onPressed: () => setState(() => _obscure = !_obscure),
                       icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
@@ -152,15 +156,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: AppInputs.fieldGap),
                 TextFormField(
                   controller: _confirm,
                   obscureText: _obscure,
                   textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _submit(),
-                  decoration: const InputDecoration(
+                  decoration: AppInputs.decoration(
+                    context,
                     labelText: 'Confirm password',
-                    prefixIcon: Icon(Icons.lock_outline),
+                    icon: Icons.verified_user_outlined,
                   ),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Required';

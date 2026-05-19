@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/auth_storage.dart';
 import '../../services/auth_api.dart';
+import '../../widgets/app_input.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -130,9 +131,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                 keyboardType: TextInputType.emailAddress,
                                 autofillHints: const [AutofillHints.email],
                                 textInputAction: TextInputAction.next,
-                                decoration: const InputDecoration(
+                                decoration: AppInputs.decoration(
+                                  context,
                                   labelText: 'Email',
-                                  prefixIcon: Icon(Icons.mail_outline),
+                                  icon: Icons.mail_outlined,
                                 ),
                                 validator: (v) {
                                   if (v == null || v.trim().isEmpty) return 'Required';
@@ -140,16 +142,17 @@ class _LoginScreenState extends State<LoginScreen> {
                                   return null;
                                 },
                               ),
-                              const SizedBox(height: 14),
+                              const SizedBox(height: AppInputs.fieldGap),
                               TextFormField(
                                 controller: _password,
                                 obscureText: _obscure,
                                 autofillHints: const [AutofillHints.password],
                                 textInputAction: TextInputAction.done,
                                 onFieldSubmitted: (_) => _submit(),
-                                decoration: InputDecoration(
+                                decoration: AppInputs.decoration(
+                                  context,
                                   labelText: 'Password',
-                                  prefixIcon: const Icon(Icons.lock_outline),
+                                  icon: Icons.lock_outline_rounded,
                                   suffixIcon: IconButton(
                                     onPressed: () => setState(() => _obscure = !_obscure),
                                     icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),

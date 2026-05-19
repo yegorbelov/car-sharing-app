@@ -76,6 +76,27 @@ class AuthApi {
     return _parseAuth(res.body);
   }
 
+  static Future<AuthUser> updateProfile({required String fullName}) async {
+    final token = await AuthStorage.getToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/auth/me');
+    final res = await http.patch(
+      uri,
+      headers: _jsonHeaders(token),
+      body: jsonEncode({'fullName': fullName.trim()}),
+    );
+    if (res.statusCode != 200) {
+      throw AuthApiException(res.statusCode, _errBody(res.body));
+    }
+    final map = jsonDecode(res.body) as Map<String, dynamic>;
+    final u = map['user'] as Map<String, dynamic>?;
+    if (u == null) {
+      throw AuthApiException(res.statusCode, 'invalid_response');
+    }
+    return AuthUser.fromJson(u);
+  }
+
   static Future<AuthUser> fetchMe(String token) async {
     final uri = Uri.parse('${apiBaseUrl()}/api/v1/auth/me');
     final res = await http.get(uri, headers: _jsonHeaders(token));
