@@ -54,25 +54,72 @@ class RentalDeal {
   }
 }
 
+class DealMessageReply {
+  const DealMessageReply({
+    required this.id,
+    required this.senderId,
+    required this.body,
+    this.attachmentType,
+  });
+
+  final int id;
+  final int senderId;
+  final String body;
+  final String? attachmentType;
+
+  factory DealMessageReply.fromJson(Map<String, dynamic> j) {
+    return DealMessageReply(
+      id: (j['id'] as num).toInt(),
+      senderId: (j['senderId'] as num).toInt(),
+      body: j['body'] as String? ?? '',
+      attachmentType: j['attachmentType'] as String?,
+    );
+  }
+}
+
 class DealMessage {
   const DealMessage({
     required this.id,
     required this.senderId,
     required this.body,
     required this.createdAt,
+    this.attachmentUrl,
+    this.attachmentType,
+    this.attachmentName,
+    this.replyToId,
+    this.replyTo,
   });
 
   final int id;
   final int senderId;
   final String body;
   final String createdAt;
+  final String? attachmentUrl;
+  final String? attachmentType;
+  final String? attachmentName;
+  final int? replyToId;
+  final DealMessageReply? replyTo;
+
+  bool get hasAttachment => (attachmentUrl ?? '').isNotEmpty;
+
+  bool get isImageAttachment => attachmentType == 'image';
+
+  bool get isFileAttachment => attachmentType == 'file';
 
   factory DealMessage.fromJson(Map<String, dynamic> j) {
+    final rawReply = j['replyTo'];
     return DealMessage(
       id: (j['id'] as num).toInt(),
       senderId: (j['senderId'] as num).toInt(),
-      body: j['body'] as String,
+      body: j['body'] as String? ?? '',
       createdAt: j['createdAt'] as String,
+      attachmentUrl: j['attachmentUrl'] as String?,
+      attachmentType: j['attachmentType'] as String?,
+      attachmentName: j['attachmentName'] as String?,
+      replyToId: (j['replyToId'] as num?)?.toInt(),
+      replyTo: rawReply is Map<String, dynamic>
+          ? DealMessageReply.fromJson(rawReply)
+          : null,
     );
   }
 }

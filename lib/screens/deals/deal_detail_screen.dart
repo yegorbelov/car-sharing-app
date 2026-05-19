@@ -1,10 +1,17 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/auth_storage.dart';
 import '../../models/auth_user.dart';
 import '../../models/rental_deal.dart';
 import '../../services/deals_api.dart';
 import '../../widgets/app_input.dart';
+import '../../widgets/chat_bubble.dart';
+import '../../widgets/chat_photo_gallery.dart';
 
 /// Formats an ISO date/datetime string to "May 16, 2026".
 String _fmtDate(String iso) {
@@ -29,6 +36,121 @@ String _fmtTime(String iso) {
   }
 }
 
+DateTime? _parseLocal(String iso) {
+  try {
+    return DateTime.parse(iso.replaceAll(' ', 'T')).toLocal();
+  } catch (_) {
+    return null;
+  }
+}
+
+String _chatDateLabel(String iso) {
+  final d = _parseLocal(iso);
+  if (d == null) return iso;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(d.year, d.month, d.day);
+  if (day == today) return 'Today';
+  if (day == today.subtract(const Duration(days: 1))) return 'Yesterday';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return '${months[d.month - 1]} ${d.day}, ${d.year}';
+}
+
+bool _showChatDateHeader(List<DealMessage> messages, int index) {
+  if (index == 0) return true;
+  final prev = _parseLocal(messages[index - 1].createdAt);
+  final cur = _parseLocal(messages[index].createdAt);
+  if (prev == null || cur == null) return false;
+  return prev.year != cur.year || prev.month != cur.month || prev.day != cur.day;
+}
+
+bool _showChatSenderName(List<DealMessage> messages, int index) {
+  if (index == 0 || _showChatDateHeader(messages, index)) return true;
+  return messages[index - 1].senderId != messages[index].senderId;
+}
+
+class _ChatDayGroup {
+  _ChatDayGroup({required this.label}) : indices = <int>[];
+
+  final String label;
+  final List<int> indices;
+}
+
+List<_ChatDayGroup> _groupMessagesByDay(List<DealMessage> messages) {
+  final groups = <_ChatDayGroup>[];
+  for (var i = 0; i < messages.length; i++) {
+    final label = _chatDateLabel(messages[i].createdAt);
+    if (groups.isEmpty || groups.last.label != label) {
+      groups.add(_ChatDayGroup(label: label));
+    }
+    groups.last.indices.add(i);
+  }
+  return groups;
+}
+
+class _MessageBubbleGroup {
+  _MessageBubbleGroup({required this.indices, required this.isMine});
+
+  final List<int> indices;
+  final bool isMine;
+}
+
+class _ChatListEntry {
+  const _ChatListEntry({
+    required this.messageIndex,
+    required this.showTail,
+    required this.compactBelow,
+    required this.compactEdgeTop,
+    required this.compactEdgeBottom,
+    this.dayLabelForAnchor,
+  });
+
+  final int messageIndex;
+  final bool showTail;
+  final bool compactBelow;
+  final bool compactEdgeTop;
+  final bool compactEdgeBottom;
+  final String? dayLabelForAnchor;
+}
+
+bool _shouldStartNewBubbleGroup(
+  List<DealMessage> messages,
+  int prevIndex,
+  int curIndex,
+) {
+  final prev = messages[prevIndex];
+  final cur = messages[curIndex];
+  if (prev.senderId != cur.senderId) return true;
+  final a = _parseLocal(prev.createdAt);
+  final b = _parseLocal(cur.createdAt);
+  if (a == null || b == null) return true;
+  return b.difference(a).inMinutes > 5;
+}
+
+List<_MessageBubbleGroup> _groupBubbleIndices(
+  List<int> dayIndices,
+  List<DealMessage> messages,
+  int? myId,
+) {
+  final groups = <_MessageBubbleGroup>[];
+  for (final i in dayIndices) {
+    final mine = myId == messages[i].senderId;
+    if (groups.isEmpty || _shouldStartNewBubbleGroup(messages, groups.last.indices.last, i)) {
+      groups.add(_MessageBubbleGroup(indices: [i], isMine: mine));
+    } else {
+      groups.last.indices.add(i);
+    }
+  }
+  return groups;
+}
+
+String _messagePreview(DealMessage m) {
+  if (m.body.trim().isNotEmpty) return m.body.trim();
+  if (m.isImageAttachment) return 'Photo';
+  if (m.isFileAttachment) return m.attachmentName ?? 'File';
+  return 'Message';
+}
+
 class DealDetailScreen extends StatefulWidget {
   const DealDetailScreen({super.key, required this.dealId});
 
@@ -46,6 +168,18 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
   final _msgCtrl = TextEditingController();
   final _scroll = ScrollController();
   AuthUser? _me;
+  DealMessage? _replyTo;
+  bool _sending = false;
+  _PendingPhoto? _pendingPhoto;
+  final _picker = ImagePicker();
+  final _chatAreaKey = GlobalKey();
+  final _dateChipKeys = <String, GlobalKey>{};
+  Timer? _hideFloatingDateTimer;
+  Timer? _scrollToBottomTimer;
+  double _floatingDateOpacity = 0;
+  String? _floatingDateLabel;
+  bool _stickToBottom = true;
+  bool _scrollAfterNextLayout = false;
 
   @override
   void initState() {
@@ -55,9 +189,65 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
 
   @override
   void dispose() {
+    _hideFloatingDateTimer?.cancel();
+    _scrollToBottomTimer?.cancel();
     _msgCtrl.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  GlobalKey _dateChipKey(String label) =>
+      _dateChipKeys.putIfAbsent(label, GlobalKey.new);
+
+  bool _onChatScroll(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+
+    if (notification is ScrollUpdateNotification ||
+        notification is ScrollStartNotification) {
+      _hideFloatingDateTimer?.cancel();
+      if (notification is ScrollUpdateNotification && _scroll.hasClients) {
+        final pos = _scroll.position;
+        _stickToBottom = pos.pixels <= pos.minScrollExtent + 96;
+      }
+      _syncFloatingDateLabel();
+      if (_floatingDateOpacity != 1) {
+        setState(() => _floatingDateOpacity = 1);
+      }
+    }
+
+    if (notification is ScrollEndNotification) {
+      _hideFloatingDateTimer?.cancel();
+      _hideFloatingDateTimer = Timer(const Duration(milliseconds: 750), () {
+        if (mounted) setState(() => _floatingDateOpacity = 0);
+      });
+    }
+    return false;
+  }
+
+  void _syncFloatingDateLabel() {
+    final areaBox = _chatAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    if (areaBox == null || !areaBox.hasSize) return;
+
+    final anchorY = areaBox.localToGlobal(Offset.zero).dy + 52;
+    String? label;
+    double? bestY;
+
+    for (final day in _groupMessagesByDay(_messages)) {
+      final ctx = _dateChipKey(day.label).currentContext;
+      if (ctx == null) continue;
+      final box = ctx.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) continue;
+      final y = box.localToGlobal(Offset.zero).dy;
+      if (y <= anchorY && (bestY == null || y > bestY)) {
+        bestY = y;
+        label = day.label;
+      }
+    }
+
+    label ??= _groupMessagesByDay(_messages).lastOrNull?.label;
+    if (label != null && label != _floatingDateLabel) {
+      setState(() => _floatingDateLabel = label);
+    }
   }
 
   Future<void> _boot() async {
@@ -75,7 +265,8 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
         _messages = m;
         _loading = false;
       });
-      _scrollBottom();
+      _stickToBottom = true;
+      _scheduleScrollToBottom(animated: false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -85,33 +276,373 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
     }
   }
 
-  void _scrollBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scroll.hasClients) return;
-      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+  /// With [reverse: true], offset 0 = newest messages at the bottom.
+  void _scrollToBottom({bool animated = false}) {
+    if (!_scroll.hasClients) return;
+    final target = _scroll.position.minScrollExtent;
+    if ((_scroll.offset - target).abs() < 2) return;
+    if (animated) {
+      _scroll.animateTo(
+        target,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _scroll.jumpTo(target);
+    }
+  }
+
+  void _scheduleScrollToBottom({bool animated = false, bool force = false}) {
+    if (!force && !_stickToBottom && !_scrollAfterNextLayout) return;
+    _scrollToBottomTimer?.cancel();
+    _scrollToBottomTimer = Timer(const Duration(milliseconds: 32), () {
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _scrollToBottom(animated: animated);
+        _scrollAfterNextLayout = false;
+      });
     });
   }
 
-  Future<void> _reloadMessages() async {
+  Future<void> _reloadMessages({bool scrollToEnd = false}) async {
     try {
       final m = await DealsApi.fetchMessages(widget.dealId);
       if (!mounted) return;
+      if (scrollToEnd) {
+        _stickToBottom = true;
+        _scrollAfterNextLayout = true;
+      }
       setState(() => _messages = m);
-      _scrollBottom();
+      if (scrollToEnd) {
+        _scheduleScrollToBottom(animated: true, force: true);
+      }
     } catch (_) {}
   }
 
   Future<void> _send() async {
+    if (_pendingPhoto != null) {
+      await _sendPendingPhoto();
+      return;
+    }
     final text = _msgCtrl.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _sending) return;
+    final replyId = _replyTo?.id;
+    setState(() {
+      _sending = true;
+      _replyTo = null;
+    });
     _msgCtrl.clear();
     try {
-      await DealsApi.postMessage(widget.dealId, text);
-      await _reloadMessages();
+      await DealsApi.postMessage(widget.dealId, body: text, replyToId: replyId);
+      await _reloadMessages(scrollToEnd: true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Future<void> _sendPendingPhoto() async {
+    final pending = _pendingPhoto;
+    if (pending == null || _sending) return;
+    final caption = _msgCtrl.text.trim();
+    final replyId = _replyTo?.id;
+    setState(() {
+      _sending = true;
+      _pendingPhoto = null;
+      _replyTo = null;
+    });
+    _msgCtrl.clear();
+    try {
+      await DealsApi.postMessageWithAttachment(
+        widget.dealId,
+        bytes: pending.bytes,
+        filename: pending.filename,
+        body: caption,
+        replyToId: replyId,
+      );
+      await _reloadMessages(scrollToEnd: true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _pendingPhoto = pending);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _sendAttachment({
+    List<int>? bytes,
+    String? filePath,
+    required String filename,
+  }) async {
+    if (_sending) return;
+    if (bytes == null && (filePath == null || filePath.isEmpty)) return;
+
+    final caption = _msgCtrl.text.trim();
+    final replyId = _replyTo?.id;
+    setState(() {
+      _sending = true;
+      _replyTo = null;
+    });
+    _msgCtrl.clear();
+    try {
+      await DealsApi.postMessageWithAttachment(
+        widget.dealId,
+        bytes: bytes,
+        filePath: filePath,
+        filename: filename,
+        body: caption,
+        replyToId: replyId,
+      );
+      await _reloadMessages(scrollToEnd: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  List<ChatGalleryPhoto> _chatGalleryPhotos(RentalDeal d) {
+    final photos = <ChatGalleryPhoto>[];
+    for (final m in _messages) {
+      if (!m.isImageAttachment) continue;
+      final url = m.attachmentUrl;
+      if (url == null || url.isEmpty) continue;
+      final caption = m.body.trim();
+      photos.add(
+        ChatGalleryPhoto(
+          messageId: m.id,
+          url: url,
+          caption: caption.isEmpty ? null : caption,
+          time: _fmtTime(m.createdAt),
+          senderName: _senderLabel(m, d),
+        ),
+      );
+    }
+    return photos;
+  }
+
+  void _openChatGallery(DealMessage message, RentalDeal d) {
+    final photos = _chatGalleryPhotos(d);
+    final index = photos.indexWhere((p) => p.messageId == message.id);
+    if (index < 0) return;
+    showChatPhotoGallery(context, photos: photos, initialIndex: index);
+  }
+
+  void _showPhotoPreviewDialog(Uint8List bytes) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(20),
+        backgroundColor: Colors.black,
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4,
+              child: Image.memory(bytes, fit: BoxFit.contain),
+            ),
+            IconButton(
+              onPressed: () => Navigator.pop(ctx),
+              icon: const Icon(Icons.close_rounded, color: Colors.white),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    final file = await _picker.pickImage(source: source, imageQuality: 85);
+    if (file == null || !mounted) return;
+    final bytes = await file.readAsBytes();
+    final name = file.name.trim().isNotEmpty ? file.name : 'photo.jpg';
+    final aspect = await decodeImageAspectRatio(bytes);
+    setState(() {
+      _pendingPhoto = _PendingPhoto(
+        bytes: bytes,
+        filename: name,
+        aspectRatio: aspect,
+      );
+    });
+    _scheduleScrollToBottom(animated: false);
+  }
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.pickFiles(withData: true);
+    if (result == null || result.files.isEmpty || !mounted) return;
+    final picked = result.files.single;
+    final name = picked.name.trim().isNotEmpty ? picked.name : 'file';
+    if (picked.bytes != null) {
+      await _sendAttachment(bytes: picked.bytes, filename: name);
+    } else if (picked.path != null) {
+      await _sendAttachment(filePath: picked.path, filename: name);
+    }
+  }
+
+  void _showAttachSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_outlined),
+              title: const Text('Photo from gallery'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Take a photo'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.attach_file_rounded),
+              title: const Text('File'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickFile();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _startReply(DealMessage m, RentalDeal d) {
+    setState(() => _replyTo = m);
+  }
+
+  String _senderLabel(DealMessage m, RentalDeal d) {
+    if (m.senderId == d.ownerId) return d.ownerName;
+    return d.renterName;
+  }
+
+  List<_ChatListEntry> _chatEntries(AuthUser? me) {
+    final entries = <_ChatListEntry>[];
+    for (final day in _groupMessagesByDay(_messages)) {
+      final bubbleGroups = _groupBubbleIndices(day.indices, _messages, me?.id);
+      var firstOfDay = true;
+      for (final bg in bubbleGroups) {
+        for (var j = 0; j < bg.indices.length; j++) {
+          final isLast = j == bg.indices.length - 1;
+          entries.add(_ChatListEntry(
+            messageIndex: bg.indices[j],
+            showTail: isLast,
+            compactBelow: !isLast,
+            compactEdgeTop: j > 0,
+            compactEdgeBottom: !isLast,
+            dayLabelForAnchor: firstOfDay ? day.label : null,
+          ));
+          firstOfDay = false;
+        }
+      }
+    }
+    return entries;
+  }
+
+  List<Widget> _chatSlivers(RentalDeal d, AuthUser? me) {
+    final entries = _chatEntries(me);
+    final count = entries.length;
+    return [
+      const SliverPadding(padding: EdgeInsets.only(bottom: 10)),
+      SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, idx) {
+              // Newest at idx 0 → sits at the bottom (reverse scroll).
+              final e = entries[count - 1 - idx];
+              final i = e.messageIndex;
+              final m = _messages[i];
+              final mine = me?.id == m.senderId;
+              final senderName = !mine && _showChatSenderName(_messages, i)
+                  ? _senderLabel(m, d)
+                  : null;
+              final bubble = ChatBubble(
+                text: m.body,
+                time: _fmtTime(m.createdAt),
+                isMine: mine,
+                showTail: e.showTail,
+                compactBelow: e.compactBelow,
+                compactEdgeTop: e.compactEdgeTop,
+                compactEdgeBottom: e.compactEdgeBottom,
+                senderName: senderName,
+                replyTo: m.replyTo,
+                attachmentUrl: m.attachmentUrl,
+                attachmentType: m.attachmentType,
+                attachmentName: m.attachmentName,
+                onLongPress: () => _startReply(m, d),
+                onImageTap: m.isImageAttachment ? () => _openChatGallery(m, d) : null,
+              );
+              if (e.dayLabelForAnchor == null) return bubble;
+              return KeyedSubtree(
+                key: _dateChipKey(e.dayLabelForAnchor!),
+                child: bubble,
+              );
+            },
+            childCount: count,
+          ),
+        ),
+      ),
+      const SliverPadding(padding: EdgeInsets.only(top: 12)),
+    ];
+  }
+
+  Widget _buildChatList(RentalDeal d, AuthUser? me) {
+    if (_messages.isEmpty) return const ChatEmptyState();
+
+    _floatingDateLabel ??= _groupMessagesByDay(_messages).last.label;
+
+    return Stack(
+      key: _chatAreaKey,
+      children: [
+        NotificationListener<ScrollNotification>(
+          onNotification: _onChatScroll,
+          child: CustomScrollView(
+            controller: _scroll,
+            reverse: true,
+            cacheExtent: 800,
+            slivers: _chatSlivers(d, me),
+          ),
+        ),
+        Positioned(
+          top: 6,
+          left: 0,
+          right: 0,
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _floatingDateOpacity,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+              child: Center(
+                child: _floatingDateLabel == null
+                    ? const SizedBox.shrink()
+                    : ChatDateChip(
+                        label: _floatingDateLabel!,
+                        sticky: true,
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   String _statusLabel(String s) {
@@ -306,80 +837,96 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
               ),
             ),
 
-          const Divider(height: 1),
-
           // Chat
           Expanded(
-            child: _messages.isEmpty
-                ? Center(
-                    child: Text(
-                      'No messages yet.\nStart the conversation!',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scroll,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, i) {
-                      final m = _messages[i];
-                      final mine = me?.id == m.senderId;
-                      return Align(
-                        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.78),
-                          decoration: BoxDecoration(
-                            color: mine ? cs.primaryContainer : cs.surfaceContainerHighest,
-                            borderRadius: BorderRadius.only(
-                              topLeft: const Radius.circular(16),
-                              topRight: const Radius.circular(16),
-                              bottomLeft: Radius.circular(mine ? 16 : 4),
-                              bottomRight: Radius.circular(mine ? 4 : 16),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(m.body, style: Theme.of(context).textTheme.bodyMedium),
-                              const SizedBox(height: 4),
-                              Text(
-                                _fmtTime(m.createdAt),
-                                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+            child: ChatWallpaper(child: _buildChatList(d, me)),
           ),
+
+          if (_replyTo != null)
+            ChatReplyBar(
+              authorName: _senderLabel(_replyTo!, d),
+              preview: _messagePreview(_replyTo!),
+              onClose: () => setState(() => _replyTo = null),
+            ),
+
+          if (_pendingPhoto != null)
+            ChatPhotoPreviewBar(
+              imageBytes: _pendingPhoto!.bytes,
+              onClose: () => setState(() => _pendingPhoto = null),
+              onTapPreview: () => _showPhotoPreviewDialog(_pendingPhoto!.bytes),
+            ),
 
           // Message input
           SafeArea(
             top: false,
-            child: Material(
-              elevation: 4,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: cs.surface,
+                border: Border(
+                  top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.45)),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 12,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
+              ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                padding: const EdgeInsets.fromLTRB(8, 10, 12, 10),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    IconButton(
+                      onPressed: _sending ? null : _showAttachSheet,
+                      icon: const Icon(Icons.add_circle_outline_rounded),
+                      tooltip: 'Attach',
+                      iconSize: 28,
+                    ),
                     Expanded(
                       child: TextField(
                         controller: _msgCtrl,
+                        enabled: !_sending,
                         minLines: 1,
                         maxLines: 4,
                         textCapitalization: TextCapitalization.sentences,
-                        decoration: AppInputs.chat(context),
+                        decoration: AppInputs.chat(context).copyWith(
+                          fillColor: const Color(0xFFF0F2F8),
+                          filled: true,
+                          hintText: _pendingPhoto != null
+                              ? 'Caption (optional)…'
+                              : (_replyTo != null ? 'Reply…' : 'Message…'),
+                        ),
                         onSubmitted: (_) => _send(),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      onPressed: _send,
-                      icon: const Icon(Icons.send_rounded),
+                    const SizedBox(width: 6),
+                    Material(
+                      color: cs.primary,
+                      borderRadius: BorderRadius.circular(14),
+                      elevation: 0,
+                      child: InkWell(
+                        onTap: (_sending ||
+                                (_pendingPhoto == null &&
+                                    _msgCtrl.text.trim().isEmpty))
+                            ? null
+                            : _send,
+                        borderRadius: BorderRadius.circular(14),
+                        child: SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: _sending
+                              ? Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: cs.onPrimary,
+                                  ),
+                                )
+                              : const Icon(Icons.send_rounded, color: Colors.white, size: 22),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -390,6 +937,18 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
       ),
     );
   }
+}
+
+class _PendingPhoto {
+  const _PendingPhoto({
+    required this.bytes,
+    required this.filename,
+    required this.aspectRatio,
+  });
+
+  final Uint8List bytes;
+  final String filename;
+  final double aspectRatio;
 }
 
 class _ParticipantCell extends StatelessWidget {

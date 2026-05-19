@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../core/api_config.dart';
 import '../../models/vehicle.dart';
 import '../../widgets/app_input.dart';
+import '../../widgets/illustrated_empty_state.dart';
 import '../../services/vehicles_api.dart';
 import 'vehicle_detail_screen.dart';
 
@@ -228,32 +229,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
 
     if (visible.isEmpty) {
+      final noListings = _vehicles.isEmpty;
       return [
         SliverFillRemaining(
           hasScrollBody: false,
           child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.search_off_rounded,
-                    size: 48,
-                    color: cs.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _vehicles.isEmpty
-                        ? 'No vehicles available.'
-                        : 'No cars match your search.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyLarge?.copyWith(color: cs.onSurfaceVariant),
-                  ),
-                ],
-              ),
+            child: IllustratedEmptyState(
+              assetPath: IllustratedEmptyState.catalogEmpty,
+              title: noListings ? 'No cars yet' : 'Nothing found',
+              subtitle: noListings
+                  ? 'Check back soon — new listings appear here.'
+                  : 'Try another city, model, or filter.',
             ),
           ),
         ),
@@ -425,16 +411,18 @@ class _VehicleCardPhotoStackState extends State<_VehicleCardPhotoStack> {
               ),
             ),
           Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.55),
-                  ],
-                  stops: const [0.45, 1.0],
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.55),
+                    ],
+                    stops: const [0.45, 1.0],
+                  ),
                 ),
               ),
             ),
@@ -442,18 +430,21 @@ class _VehicleCardPhotoStackState extends State<_VehicleCardPhotoStack> {
           Positioned(
             top: 12,
             left: 12,
-            child: _Pill(
+            child: IgnorePointer(
+              child: _Pill(
               text: vehicle.className.isNotEmpty
                   ? vehicle.className[0].toUpperCase() +
                         vehicle.className.substring(1)
                   : '',
+              ),
             ),
           ),
           Positioned(
             top: 12,
             right: 12,
-            child: _Pill(
-              child: Row(
+            child: IgnorePointer(
+              child: _Pill(
+                child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   SvgPicture.asset(
@@ -472,52 +463,58 @@ class _VehicleCardPhotoStackState extends State<_VehicleCardPhotoStack> {
                     ),
                   ),
                 ],
+                ),
               ),
             ),
           ),
-          if (multi)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 44,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(urls.length, (i) {
-                  final active = i == _pageIndex;
-                  return AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    margin: const EdgeInsets.symmetric(horizontal: 2),
-                    width: active ? 14 : 5,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: active ? Colors.white : Colors.white38,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  );
-                }),
-              ),
-            ),
           Positioned(
             left: 14,
             right: 14,
-            bottom: 14,
-            child: Text(
-              vehicle.title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.3,
-                shadows: [
-                  Shadow(
-                    color: Colors.black38,
-                    blurRadius: 6,
-                    offset: Offset(0, 1),
+            bottom: 12,
+            child: IgnorePointer(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    vehicle.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black38,
+                          blurRadius: 6,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                  if (multi) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(urls.length, (i) {
+                        final active = i == _pageIndex;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          width: active ? 14 : 5,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: active ? Colors.white : Colors.white38,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        );
+                      }),
+                    ),
+                  ],
                 ],
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

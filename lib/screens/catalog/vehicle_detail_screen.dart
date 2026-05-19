@@ -8,6 +8,7 @@ import '../../core/api_config.dart';
 import '../../core/auth_storage.dart';
 import '../../models/vehicle.dart';
 import '../../services/deals_api.dart';
+import '../../widgets/illustrated_empty_state.dart';
 import '../../services/vehicles_api.dart';
 import '../auth/login_screen.dart';
 
@@ -240,9 +241,8 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     try {
       await DealsApi.createDeal(vehicleId: v.id, dayCount: days);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Request sent! Check Bookings.')),
-      );
+      await IllustratedEmptyState.showOrderSuccess(context);
+      if (!context.mounted) return;
       Navigator.of(context).pop();
     } on DealsApiException catch (e) {
       if (!context.mounted) return;
@@ -267,13 +267,27 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     final v = _vehicle;
     final isOwner = _myId != null && _myId == v.ownerUserId;
 
+    const heroHeight = 260.0;
+    const headerExpandedHeight = heroHeight;
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 260,
+            expandedHeight: headerExpandedHeight,
             pinned: true,
+            leadingWidth: 56,
+            backgroundColor: cs.surface,
+            foregroundColor: cs.onSurface,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            scrolledUnderElevation: 0,
             flexibleSpace: FlexibleSpaceBar(
+              centerTitle: false,
+              expandedTitleScale: 1,
+              collapseMode: CollapseMode.pin,
+              titlePadding: EdgeInsets.zero,
+              title: _VehicleCollapsingTitle(vehicle: v),
               background: _VehicleHero(
                 key: ValueKey(v.galleryUrls.join('|')),
                 vehicle: v,
@@ -294,45 +308,9 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
             ],
           ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                // Title + price
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        v.title,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.5,
-                            ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF111111),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '\$${v.pricePerDay.toStringAsFixed(0)}/day',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
                 Row(
                   children: [
                     SvgPicture.asset('assets/icons/star.svg', width: 18, height: 18),
@@ -394,39 +372,181 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                     ),
                   ),
                 ),
-
-                const SizedBox(height: 28),
-
-                if (isOwner)
-                  OutlinedButton.icon(
-                    onPressed: v.galleryUrls.length >= 10
-                        ? null
-                        : _pickAndUploadPhoto,
-                    icon: const Icon(Icons.add_a_photo_outlined),
-                    label: Text(
-                      v.galleryUrls.length >= 10
-                          ? 'Max 10 photos'
-                          : (v.galleryUrls.isEmpty
-                                ? 'Add photos'
-                                : 'Add another photo'),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                    ),
-                  )
-                else
-                  FilledButton.icon(
-                    onPressed: _openBookSheet,
-                    icon: const Icon(Icons.key_rounded),
-                    label: const Text('Request rental'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
-                    ),
-                  ),
               ]),
             ),
           ),
         ],
+      ),
+      bottomNavigationBar: _VehicleDetailBottomBar(
+        isOwner: isOwner,
+        vehicle: v,
+        onRequestRental: _openBookSheet,
+        onAddPhoto: _pickAndUploadPhoto,
+      ),
+    );
+  }
+}
+
+/// Single title row driven by [FlexibleSpaceBar] — moves into the toolbar on scroll.
+class _VehicleCollapsingTitle extends StatelessWidget {
+  const _VehicleCollapsingTitle({required this.vehicle});
+
+  final Vehicle vehicle;
+
+  static const _collapseTransitionPx = 50.0;
+  static const _leadingClearance = 56.0;
+
+  /// Full-size title until within [_collapseTransitionPx] of the collapsed toolbar.
+  ({double sizeT, double startPad, bool inToolbar}) _collapseVisual(BuildContext context) {
+    final settings = context.dependOnInheritedWidgetOfExactType<FlexibleSpaceBarSettings>();
+    if (settings == null) {
+      return (sizeT: 1.0, startPad: 16.0, inToolbar: false);
+    }
+    final distFromCollapsed = settings.currentExtent - settings.minExtent;
+    final sizeT = distFromCollapsed >= _collapseTransitionPx
+        ? 1.0
+        : (distFromCollapsed / _collapseTransitionPx).clamp(0.0, 1.0);
+    final inToolbar = distFromCollapsed < _collapseTransitionPx;
+    final startPad = 16.0 + ((_leadingClearance - 16.0) * (1.0 - sizeT));
+    return (sizeT: sizeT, startPad: startPad, inToolbar: inToolbar);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final visual = _collapseVisual(context);
+    final t = visual.sizeT;
+
+    final titleSize = 16.0 + (8.0 * t);
+    final priceHPad = 10.0 + (4.0 * t);
+    final priceVPad = 4.0 + (4.0 * t);
+    final priceFontSize = 12.0 + (4.0 * t);
+    final priceRadius = 12.0 + (8.0 * t);
+    // t = 1 on hero (white), t = 0 in toolbar (onSurface)
+    final fg = Color.lerp(cs.onSurface, Colors.white, t)!;
+    final heroShadow = t > 0.001
+        ? [
+            Shadow(
+              color: const Color(0x99000000).withValues(alpha: 0.6 * t),
+              offset: Offset(0, t),
+              blurRadius: 6 * t,
+            ),
+          ]
+        : null;
+
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Text(
+            vehicle.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: titleSize,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+              height: 1.15,
+              color: fg,
+              shadows: heroShadow,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: priceHPad, vertical: priceVPad),
+          decoration: BoxDecoration(
+            color: const Color(0xFF111111),
+            borderRadius: BorderRadius.circular(priceRadius),
+          ),
+          child: Text(
+            '\$${vehicle.pricePerDay.toStringAsFixed(0)}/day',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: priceFontSize,
+              fontWeight: FontWeight.w800,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final content = Padding(
+      padding: EdgeInsetsDirectional.fromSTEB(
+        visual.startPad,
+        visual.inToolbar ? 0 : 10,
+        16,
+        visual.inToolbar ? 0 : 10,
+      ),
+      child: row,
+    );
+
+    if (visual.inToolbar) {
+      return IgnorePointer(
+        child: SizedBox(
+          height: kToolbarHeight,
+          child: Align(alignment: Alignment.centerLeft, child: content),
+        ),
+      );
+    }
+    return IgnorePointer(child: content);
+  }
+}
+
+class _VehicleDetailBottomBar extends StatelessWidget {
+  const _VehicleDetailBottomBar({
+    required this.isOwner,
+    required this.vehicle,
+    required this.onRequestRental,
+    required this.onAddPhoto,
+  });
+
+  final bool isOwner;
+  final Vehicle vehicle;
+  final VoidCallback onRequestRental;
+  final VoidCallback onAddPhoto;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final atPhotoLimit = vehicle.galleryUrls.length >= 10;
+
+    return Material(
+      elevation: 12,
+      shadowColor: Colors.black.withValues(alpha: 0.12),
+      color: cs.surface,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.45))),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: isOwner
+                ? OutlinedButton.icon(
+                    onPressed: atPhotoLimit ? null : onAddPhoto,
+                    icon: const Icon(Icons.add_a_photo_outlined),
+                    label: Text(
+                      atPhotoLimit
+                          ? 'Max 10 photos'
+                          : (vehicle.galleryUrls.isEmpty ? 'Add photos' : 'Add another photo'),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                    ),
+                  )
+                : FilledButton.icon(
+                    onPressed: onRequestRental,
+                    icon: const Icon(Icons.key_rounded),
+                    label: Text('Request rental · \$${vehicle.pricePerDay.toStringAsFixed(0)}/day'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                    ),
+                  ),
+          ),
+        ),
       ),
     );
   }
@@ -504,16 +624,18 @@ class _VehicleHeroState extends State<_VehicleHero> {
             ),
           ),
         Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.35),
-                ],
-                stops: const [0.5, 1.0],
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.35),
+                  ],
+                  stops: const [0.5, 1.0],
+                ),
               ),
             ),
           ),
@@ -523,7 +645,8 @@ class _VehicleHeroState extends State<_VehicleHero> {
             bottom: 14,
             left: 0,
             right: 0,
-            child: Row(
+            child: IgnorePointer(
+              child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(urls.length, (i) {
                 final active = i == _pageIndex;
@@ -538,6 +661,7 @@ class _VehicleHeroState extends State<_VehicleHero> {
                   ),
                 );
               }),
+              ),
             ),
           ),
         if (widget.uploading)

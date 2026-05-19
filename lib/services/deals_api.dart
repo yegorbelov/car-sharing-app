@@ -71,15 +71,60 @@ class DealsApi {
     return list.map((e) => DealMessage.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  static Future<DealMessage> postMessage(int dealId, String body) async {
+  static Future<DealMessage> postMessage(
+    int dealId, {
+    String body = '',
+    int? replyToId,
+  }) async {
     final uri = Uri.parse('${apiBaseUrl()}/api/v1/deals/$dealId/messages');
+    final payload = <String, dynamic>{'body': body};
+    if (replyToId != null) payload['replyToId'] = replyToId;
     final res = await http.post(
       uri,
       headers: await _authHeaders(),
-      body: jsonEncode({'body': body}),
+      body: jsonEncode(payload),
     );
     if (res.statusCode != 201) _throwOrUnauthorized(res);
     return DealMessage.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  static Future<DealMessage> postMessageWithAttachment(
+    int dealId, {
+    String? filePath,
+    List<int>? bytes,
+    String filename = 'photo.jpg',
+    String body = '',
+    int? replyToId,
+  }) async {
+    final token = await AuthStorage.getToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/deals/$dealId/messages');
+    final file = bytes != null
+        ? http.MultipartFile.fromBytes('attachment', bytes, filename: filename)
+        : await http.MultipartFile.fromPath(
+            'attachment',
+            filePath!,
+            filename: _filenameFromPath(filePath, filename),
+          );
+
+    final request = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = 'Bearer $token'
+      ..headers['Accept'] = 'application/json'
+      ..files.add(file);
+    if (body.isNotEmpty) request.fields['body'] = body;
+    if (replyToId != null) request.fields['replyToId'] = '$replyToId';
+
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode != 201) _throwOrUnauthorized(res);
+    return DealMessage.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  static String _filenameFromPath(String filePath, String fallback) {
+    final name = filePath.split('/').last;
+    if (name.isNotEmpty && name.contains('.')) return name;
+    return fallback;
   }
 
   static Future<void> createDeal({required int vehicleId, int dayCount = 3}) async {
