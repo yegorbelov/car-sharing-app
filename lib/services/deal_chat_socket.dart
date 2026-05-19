@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../core/api_config.dart';
@@ -54,7 +55,10 @@ class DealChatSocket {
       }
 
       final uri = dealChatWebSocketUri(dealId, token);
-      final channel = WebSocketChannel.connect(uri);
+      final channel = IOWebSocketChannel.connect(
+        uri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
       _channel = channel;
       _subscription = channel.stream.listen(
         _onData,

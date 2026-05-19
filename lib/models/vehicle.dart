@@ -6,6 +6,8 @@ class Vehicle {
     required this.className,
     required this.pricePerDayCents,
     required this.rating,
+    this.reviewCount = 0,
+    this.createdAt = '',
     this.ownerUserId,
     this.photoUrl = '',
     this.photoUrls = const [],
@@ -27,6 +29,8 @@ class Vehicle {
   final String className;
   final int pricePerDayCents;
   final double rating;
+  final int reviewCount;
+  final String createdAt;
   final int? ownerUserId;
   /// Primary cover URL (first gallery image when present).
   final String photoUrl;
@@ -44,7 +48,23 @@ class Vehicle {
 
   double get pricePerDay => pricePerDayCents / 100;
 
+  DateTime? get createdAtDate {
+    if (createdAt.isEmpty) return null;
+    try {
+      return DateTime.parse(createdAt.replaceAll(' ', 'T'));
+    } catch (_) {
+      return null;
+    }
+  }
+
   String get subtitle => '$city · ${_classLabel(className)}';
+
+  /// City and model year for catalog cards (year omitted if unknown).
+  String get catalogLocationLabel =>
+      modelYear > 0 ? '$city · $modelYear' : city;
+
+  String get reviewCountLabel =>
+      reviewCount == 1 ? '1 review' : '$reviewCount reviews';
 
   /// URLs for gallery (non-empty); falls back to single cover.
   List<String> get galleryUrls {
@@ -80,6 +100,8 @@ class Vehicle {
       className: j['class'] as String,
       pricePerDayCents: (j['pricePerDayCents'] as num).toInt(),
       rating: (j['rating'] as num).toDouble(),
+      reviewCount: (j['reviewCount'] as num?)?.toInt() ?? 0,
+      createdAt: (j['createdAt'] as String?) ?? '',
       ownerUserId: (j['ownerUserId'] as num?)?.toInt(),
       photoUrl: cover,
       photoUrls: urls,
@@ -103,6 +125,8 @@ class Vehicle {
     String? className,
     int? pricePerDayCents,
     double? rating,
+    int? reviewCount,
+    String? createdAt,
     int? ownerUserId,
     String? photoUrl,
     List<String>? photoUrls,
@@ -124,6 +148,8 @@ class Vehicle {
       className: className ?? this.className,
       pricePerDayCents: pricePerDayCents ?? this.pricePerDayCents,
       rating: rating ?? this.rating,
+      reviewCount: reviewCount ?? this.reviewCount,
+      createdAt: createdAt ?? this.createdAt,
       ownerUserId: ownerUserId ?? this.ownerUserId,
       photoUrl: photoUrl ?? this.photoUrl,
       photoUrls: photoUrls ?? this.photoUrls,

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/api_config.dart';
 import '../core/auth_storage.dart';
+import '../models/vehicle_review.dart';
 
 class VehiclePhotoUploadResult {
   const VehiclePhotoUploadResult({required this.photoUrl, required this.photoUrls});
@@ -44,6 +45,19 @@ class VehiclesApi {
       if (m is Map && m['error'] is String) msg = m['error'] as String;
     } catch (_) {}
     return msg;
+  }
+
+  static Future<List<VehicleReview>> fetchReviews(int vehicleId) async {
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/vehicles/$vehicleId/reviews');
+    final res = await http.get(uri, headers: const {'Accept': 'application/json'});
+    if (res.statusCode == 404) return [];
+    if (res.statusCode != 200) {
+      throw Exception('reviews ${res.statusCode}');
+    }
+    final list = jsonDecode(res.body) as List<dynamic>;
+    return list
+        .map((e) => VehicleReview.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   static Future<List<Map<String, dynamic>>> fetchRaw() async {

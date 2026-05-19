@@ -8,6 +8,20 @@ import '../../widgets/illustrated_empty_state.dart';
 import '../../services/vehicles_api.dart';
 import 'vehicle_detail_screen.dart';
 
+enum CatalogSort {
+  relevance('Relevance'),
+  newest('Newest'),
+  oldest('Oldest'),
+  ratingHigh('Highest rated'),
+  ratingLow('Lowest rated'),
+  priceLow('Price: low to high'),
+  priceHigh('Price: high to low'),
+  reviewsMost('Most reviewed');
+
+  const CatalogSort(this.label);
+  final String label;
+}
+
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({
     super.key,
@@ -48,6 +62,25 @@ class _CatalogScreenState extends State<CatalogScreen> {
     'business',
   ];
   String? _selectedClass;
+  int? _minModelYear;
+  int? _maxModelYear;
+  CatalogSort _sort = CatalogSort.relevance;
+
+  int get _selectedClassIndex {
+    for (var i = 0; i < _classValues.length; i++) {
+      if (_classValues[i] == _selectedClass) return i;
+    }
+    return 0;
+  }
+
+  String? get _yearFilterSummary {
+    if (_minModelYear == null && _maxModelYear == null) return null;
+    if (_minModelYear != null && _maxModelYear != null) {
+      return '$_minModelYear–$_maxModelYear';
+    }
+    if (_minModelYear != null) return 'from $_minModelYear';
+    return 'to $_maxModelYear';
+  }
 
   @override
   void didUpdateWidget(CatalogScreen oldWidget) {
@@ -64,13 +97,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   List<Vehicle> get _filteredVehicles {
-    var list = _vehicles;
+    var list = List<Vehicle>.from(_vehicles);
     final q = _searchCtrl.text.trim().toLowerCase();
     if (q.isNotEmpty) {
       list = list
           .where(
             (v) =>
-                '${v.title} ${v.city} ${v.className}'.toLowerCase().contains(q),
+                '${v.title} ${v.city} ${v.className} ${v.modelYear}'
+                    .toLowerCase()
+                    .contains(q),
           )
           .toList();
     }
@@ -79,7 +114,243 @@ class _CatalogScreenState extends State<CatalogScreen> {
           .where((v) => v.className.toLowerCase() == _selectedClass)
           .toList();
     }
+    if (_minModelYear != null || _maxModelYear != null) {
+      list = list.where((v) {
+        if (v.modelYear <= 0) return false;
+        if (_minModelYear != null && v.modelYear < _minModelYear!) return false;
+        if (_maxModelYear != null && v.modelYear > _maxModelYear!) return false;
+        return true;
+      }).toList();
+    }
+    return _sortVehicles(list, q);
+  }
+
+  List<Vehicle> _sortVehicles(List<Vehicle> list, String queryLower) {
+    int relevanceScore(Vehicle v) {
+      if (queryLower.isEmpty) return 0;
+      final hay = '${v.title} ${v.city} ${v.className}'.toLowerCase();
+      var score = 0;
+      if (hay.startsWith(queryLower)) score += 4;
+      if (hay.contains(queryLower)) score += 2;
+      return score;
+    }
+
+    double relevanceRank(Vehicle v) =>
+        v.rating * (1 + (v.reviewCount / 80).clamp(0.0, 3.0));
+
+    int compareCreated(Vehicle a, Vehicle b, {required bool newestFirst}) {
+      final da = a.createdAtDate;
+      final db = b.createdAtDate;
+      if (da == null && db == null) {
+        return newestFirst ? b.id.compareTo(a.id) : a.id.compareTo(b.id);
+      }
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return newestFirst ? db.compareTo(da) : da.compareTo(db);
+    }
+
+    switch (_sort) {
+      case CatalogSort.relevance:
+        list.sort((a, b) {
+          final rs = relevanceScore(b).compareTo(relevanceScore(a));
+          if (rs != 0) return rs;
+          final rr = relevanceRank(b).compareTo(relevanceRank(a));
+          if (rr != 0) return rr;
+          return b.reviewCount.compareTo(a.reviewCount);
+        });
+      case CatalogSort.newest:
+        list.sort((a, b) => compareCreated(a, b, newestFirst: true));
+      case CatalogSort.oldest:
+        list.sort((a, b) => compareCreated(a, b, newestFirst: false));
+      case CatalogSort.ratingHigh:
+        list.sort((a, b) {
+          final r = b.rating.compareTo(a.rating);
+          if (r != 0) return r;
+          return b.reviewCount.compareTo(a.reviewCount);
+        });
+      case CatalogSort.ratingLow:
+        list.sort((a, b) {
+          final r = a.rating.compareTo(b.rating);
+          if (r != 0) return r;
+          return a.reviewCount.compareTo(b.reviewCount);
+        });
+      case CatalogSort.priceLow:
+        list.sort(
+          (a, b) => a.pricePerDayCents.compareTo(b.pricePerDayCents),
+        );
+      case CatalogSort.priceHigh:
+        list.sort(
+          (a, b) => b.pricePerDayCents.compareTo(a.pricePerDayCents),
+        );
+      case CatalogSort.reviewsMost:
+        list.sort((a, b) {
+          final c = b.reviewCount.compareTo(a.reviewCount);
+          if (c != 0) return c;
+          return b.rating.compareTo(a.rating);
+        });
+    }
     return list;
+  }
+
+  Future<void> _showSortSheet() async {
+    final picked = await showModalBottomSheet<CatalogSort>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final maxH = MediaQuery.sizeOf(ctx).height * 0.72;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.only(bottom: 12),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+                child: Text(
+                  'Sort by',
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              for (final option in CatalogSort.values)
+                ListTile(
+                  dense: true,
+                  visualDensity: VisualDensity.compact,
+                  title: Text(option.label),
+                  trailing: _sort == option
+                      ? Icon(
+                          Icons.check_rounded,
+                          color: Theme.of(ctx).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () => Navigator.pop(ctx, option),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked != null && picked != _sort) {
+      setState(() => _sort = picked);
+    }
+  }
+
+  ({int min, int max}) _modelYearBounds() {
+    final years = _vehicles
+        .where((v) => v.modelYear > 0)
+        .map((v) => v.modelYear)
+        .toList();
+    if (years.isEmpty) {
+      final y = DateTime.now().year;
+      return (min: y - 15, max: y);
+    }
+    years.sort();
+    return (min: years.first, max: years.last);
+  }
+
+  Future<void> _showYearFilterSheet() async {
+    final bounds = _modelYearBounds();
+    var range = RangeValues(
+      (_minModelYear ?? bounds.min).toDouble(),
+      (_maxModelYear ?? bounds.max).toDouble(),
+    );
+    var yearFilterOn = _minModelYear != null || _maxModelYear != null;
+
+    final applied = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final maxH = MediaQuery.sizeOf(ctx).height * 0.5;
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxH),
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                children: [
+                  Text(
+                    'Model year',
+                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Filter by year'),
+                    value: yearFilterOn,
+                    onChanged: (on) {
+                      setSheetState(() {
+                        yearFilterOn = on;
+                        if (on) {
+                          range = RangeValues(
+                            bounds.min.toDouble(),
+                            bounds.max.toDouble(),
+                          );
+                        }
+                      });
+                    },
+                  ),
+                  if (yearFilterOn) ...[
+                    Text(
+                      '${range.start.round()} – ${range.end.round()}',
+                      style: Theme.of(ctx).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    RangeSlider(
+                      values: range,
+                      min: bounds.min.toDouble(),
+                      max: bounds.max.toDouble(),
+                      divisions: (bounds.max - bounds.min).clamp(1, 30),
+                      labels: RangeLabels(
+                        '${range.start.round()}',
+                        '${range.end.round()}',
+                      ),
+                      onChanged: (v) => setSheetState(() => range = v),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: yearFilterOn
+                            ? () => setSheetState(() => yearFilterOn = false)
+                            : null,
+                        child: const Text('Clear'),
+                      ),
+                      const Spacer(),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Apply'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (applied == true && mounted) {
+      setState(() {
+        if (yearFilterOn) {
+          _minModelYear = range.start.round();
+          _maxModelYear = range.end.round();
+        } else {
+          _minModelYear = null;
+          _maxModelYear = null;
+        }
+      });
+    }
   }
 
   Future<void> _load() async {
@@ -136,29 +407,25 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 4, 24, 6),
-                    child: Text(
-                      'Catalog',
-                      style: Theme.of(context).textTheme.headlineLarge
-                          ?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                          ),
-                    ),
-                  ),
                   _CatalogSearchBar(
                     controller: _searchCtrl,
-                    classLabels: _classLabels,
-                    classValues: _classValues,
-                    selectedClass: _selectedClass,
-                    onChipTap: (String? value) {
+                    onSortTap: _showSortSheet,
+                    onQueryChanged: () => setState(() {}),
+                  ),
+                  _CatalogFilterStrip(
+                    labels: _classLabels,
+                    values: _classValues,
+                    selectedIndex: _selectedClassIndex,
+                    yearFilterActive:
+                        _minModelYear != null || _maxModelYear != null,
+                    yearFilterLabel: _yearFilterSummary,
+                    onClassSelected: (value) {
                       setState(() {
                         final isSelected = _selectedClass == value;
                         _selectedClass = isSelected ? null : value;
                       });
                     },
-                    onQueryChanged: () => setState(() {}),
+                    onYearTap: _showYearFilterSheet,
                   ),
                   Divider(
                     height: 1,
@@ -282,61 +549,275 @@ class _CatalogScreenState extends State<CatalogScreen> {
 class _CatalogSearchBar extends StatelessWidget {
   const _CatalogSearchBar({
     required this.controller,
-    required this.classLabels,
-    required this.classValues,
-    required this.selectedClass,
-    required this.onChipTap,
+    required this.onSortTap,
     required this.onQueryChanged,
   });
 
   final TextEditingController controller;
-  final List<String> classLabels;
-  final List<String?> classValues;
-  final String? selectedClass;
-  final ValueChanged<String?> onChipTap;
+  final VoidCallback onSortTap;
   final VoidCallback onQueryChanged;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-          child: TextField(
-            controller: controller,
-            decoration: AppInputs.search(
-              context,
-              hintText: 'City, model…',
-              icon: Icon(Icons.search_rounded, size: 22, color: cs.onSurfaceVariant.withValues(alpha: 0.75)),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+      child: TextField(
+        controller: controller,
+        decoration: AppInputs.search(
+          context,
+          hintText: 'City, model, year…',
+          icon: Icon(
+            Icons.search_rounded,
+            size: 22,
+            color: cs.onSurfaceVariant.withValues(alpha: 0.75),
+          ),
+        ).copyWith(
+          suffixIcon: IconButton(
+            onPressed: onSortTap,
+            tooltip: 'Sort',
+            icon: Icon(
+              Icons.swap_vert_rounded,
+              color: cs.onSurfaceVariant,
             ),
-            onChanged: (_) => onQueryChanged(),
           ),
         ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 40,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                for (var i = 0; i < classLabels.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 8),
-                  FilterChip(
-                    label: Text(classLabels[i]),
-                    selected: selectedClass == classValues[i],
-                    onSelected: (_) => onChipTap(classValues[i]),
+        onChanged: (_) => onQueryChanged(),
+      ),
+    );
+  }
+}
+
+/// Horizontal class filters with a sliding pill indicator.
+class _CatalogFilterStrip extends StatefulWidget {
+  const _CatalogFilterStrip({
+    required this.labels,
+    required this.values,
+    required this.selectedIndex,
+    required this.yearFilterActive,
+    required this.yearFilterLabel,
+    required this.onClassSelected,
+    required this.onYearTap,
+  });
+
+  final List<String> labels;
+  final List<String?> values;
+  final int selectedIndex;
+  final bool yearFilterActive;
+  final String? yearFilterLabel;
+  final ValueChanged<String?> onClassSelected;
+  final VoidCallback onYearTap;
+
+  @override
+  State<_CatalogFilterStrip> createState() => _CatalogFilterStripState();
+}
+
+class _CatalogFilterStripState extends State<_CatalogFilterStrip> {
+  final _scrollCtrl = ScrollController();
+  final _trackKey = GlobalKey();
+  final _chipKeys = <GlobalKey>[];
+
+  double _indicatorLeft = 0;
+  double _indicatorWidth = 0;
+  bool _indicatorReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _chipKeys.addAll(List.generate(widget.labels.length, (_) => GlobalKey()));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncIndicator());
+  }
+
+  @override
+  void didUpdateWidget(covariant _CatalogFilterStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedIndex != widget.selectedIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncIndicator());
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _syncIndicator() {
+    if (!mounted) return;
+    final trackBox =
+        _trackKey.currentContext?.findRenderObject() as RenderBox?;
+    final chipBox =
+        _chipKeys[widget.selectedIndex].currentContext?.findRenderObject()
+            as RenderBox?;
+    if (trackBox == null || chipBox == null || !trackBox.hasSize) return;
+
+    final chipGlobal = chipBox.localToGlobal(Offset.zero);
+    final trackGlobal = trackBox.localToGlobal(Offset.zero);
+    final left = chipGlobal.dx - trackGlobal.dx;
+    final width = chipBox.size.width;
+
+    setState(() {
+      _indicatorLeft = left;
+      _indicatorWidth = width;
+      _indicatorReady = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8ECF4),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: SingleChildScrollView(
+                  controller: _scrollCtrl,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.all(4),
+                  child: Stack(
+                    key: _trackKey,
+                    clipBehavior: Clip.none,
+                    children: [
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 260),
+                        curve: Curves.easeOutCubic,
+                        left: _indicatorLeft,
+                        top: 0,
+                        bottom: 0,
+                        width: _indicatorWidth,
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 180),
+                          opacity: _indicatorReady ? 1 : 0,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          for (var i = 0; i < widget.labels.length; i++)
+                            _FilterChip(
+                              key: _chipKeys[i],
+                              label: widget.labels[i],
+                              selected: i == widget.selectedIndex,
+                              onTap: () =>
+                                  widget.onClassSelected(widget.values[i]),
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-              ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _YearFilterChip(
+            active: widget.yearFilterActive,
+            summary: widget.yearFilterLabel,
+            onTap: widget.onYearTap,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected ? cs.primary : cs.onSurfaceVariant,
             ),
           ),
         ),
-        const SizedBox(height: 8),
-      ],
+      ),
+    );
+  }
+}
+
+class _YearFilterChip extends StatelessWidget {
+  const _YearFilterChip({
+    required this.active,
+    required this.summary,
+    required this.onTap,
+  });
+
+  final bool active;
+  final String? summary;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: active ? cs.primary : const Color(0xFFE8ECF4),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.calendar_today_rounded,
+                size: 16,
+                color: active ? cs.onPrimary : cs.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                summary ?? 'Year',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: active ? cs.onPrimary : cs.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -450,27 +931,9 @@ class _VehicleCardPhotoStackState extends State<_VehicleCardPhotoStack> {
             top: 12,
             right: 12,
             child: IgnorePointer(
-              child: _Pill(
-                child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SvgPicture.asset(
-                    'assets/icons/star.svg',
-                    width: 14,
-                    height: 14,
-                    colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    vehicle.rating.toStringAsFixed(1),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-                ),
+              child: _RatingPill(
+                rating: vehicle.rating,
+                reviewCount: vehicle.reviewCount,
               ),
             ),
           ),
@@ -569,7 +1032,7 @@ class _VehicleCard extends StatelessWidget {
                   const SizedBox(width: 3),
                   Expanded(
                     child: Text(
-                      vehicle.city,
+                      vehicle.catalogLocationLabel,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
@@ -602,6 +1065,57 @@ class _VehicleCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _RatingPill extends StatelessWidget {
+  const _RatingPill({required this.rating, required this.reviewCount});
+
+  final double rating;
+  final int reviewCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Pill(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset(
+            'assets/icons/star.svg',
+            width: 14,
+            height: 14,
+            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            rating.toStringAsFixed(1),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (reviewCount > 0) ...[
+            Text(
+              ' · ',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.65),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '$reviewCount',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.92),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

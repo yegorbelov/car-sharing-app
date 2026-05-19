@@ -15,12 +15,17 @@ String apiBaseUrl() {
 
 /// WebSocket URL for live deal chat (`http` → `ws`, `https` → `wss`).
 Uri dealChatWebSocketUri(int dealId, String token) {
-  final http = Uri.parse(apiBaseUrl());
-  final scheme = http.scheme == 'https' ? 'wss' : 'ws';
+  final base = Uri.parse(apiBaseUrl());
+  final scheme = switch (base.scheme) {
+    'https' => 'wss',
+    'http' || 'ws' => 'ws',
+    'wss' => 'wss',
+    _ => 'ws',
+  };
   return Uri(
     scheme: scheme,
-    host: http.host,
-    port: http.hasPort ? http.port : null,
+    host: base.host,
+    port: base.hasPort ? base.port : null,
     path: '/api/v1/deals/$dealId/messages/ws',
     queryParameters: {'token': token},
   );

@@ -10,6 +10,7 @@ import '../../models/vehicle.dart';
 import '../../core/user_messages.dart';
 import '../../services/deals_api.dart';
 import '../../widgets/illustrated_empty_state.dart';
+import '../../widgets/vehicle_reviews_sheet.dart';
 import '../../services/vehicles_api.dart';
 import '../auth/login_screen.dart';
 
@@ -325,15 +326,57 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
               delegate: SliverChildListDelegate([
                 Row(
                   children: [
-                    SvgPicture.asset('assets/icons/star.svg', width: 18, height: 18),
-                    const SizedBox(width: 5),
-                    Text(
-                      v.rating.toStringAsFixed(1),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                    Expanded(
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => showVehicleReviewsSheet(context, vehicle: v),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SvgPicture.asset(
+                                  'assets/icons/star.svg',
+                                  width: 18,
+                                  height: 18,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  v.rating.toStringAsFixed(1),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    v.reviewCount > 0
+                                        ? v.reviewCountLabel
+                                        : 'See reviews',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          color: cs.primary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 20,
+                                  color: cs.primary,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 12),
                     Icon(
                       Icons.location_on_rounded,
                       size: 16,
@@ -341,7 +384,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                     ),
                     const SizedBox(width: 2),
                     Text(
-                      v.city,
+                      v.catalogLocationLabel,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
