@@ -6,6 +6,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../core/api_config.dart';
+import '../widgets/app_snackbar.dart';
 
 bool chatAttachmentIsImage({
   String? attachmentType,
@@ -98,14 +99,12 @@ Future<void> previewChatAttachment(
       final msg = result.message.trim().isEmpty
           ? 'No app available to open this file.'
           : result.message;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      context.showAppSnackBar(msg);
     }
   } catch (e) {
     if (context.mounted) {
       Navigator.of(context, rootNavigator: true).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open file: $e')),
-      );
+      context.showAppSnackBar('Could not open file: $e');
     }
   }
 }

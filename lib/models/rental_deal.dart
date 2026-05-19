@@ -153,6 +153,8 @@ class LedgerEntry {
     required this.note,
     required this.createdAt,
     this.dealId,
+    this.vehicleTitle,
+    this.dealStatus,
   });
 
   final int id;
@@ -161,6 +163,10 @@ class LedgerEntry {
   final String note;
   final String createdAt;
   final int? dealId;
+  final String? vehicleTitle;
+  final String? dealStatus;
+
+  bool get hasDeal => dealId != null;
 
   factory LedgerEntry.fromJson(Map<String, dynamic> j) {
     return LedgerEntry(
@@ -170,6 +176,8 @@ class LedgerEntry {
       note: j['note'] as String,
       createdAt: j['createdAt'] as String,
       dealId: (j['dealId'] as num?)?.toInt(),
+      vehicleTitle: j['vehicleTitle'] as String?,
+      dealStatus: j['dealStatus'] as String?,
     );
   }
 }

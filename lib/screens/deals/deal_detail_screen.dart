@@ -7,10 +7,13 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/auth_storage.dart';
 import '../../core/user_messages.dart';
 import '../../models/auth_user.dart';
+import '../../models/dispute.dart';
 import '../../models/rental_deal.dart';
 import '../../services/chat_attachment_preview.dart';
 import '../../services/deal_chat_socket.dart';
 import '../../services/deals_api.dart';
+import '../../widgets/app_snackbar.dart';
+import '../profile/user_profile_screen.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/chat_photo_gallery.dart';
 
@@ -192,6 +195,7 @@ class DealDetailScreen extends StatefulWidget {
 
 class _DealDetailScreenState extends State<DealDetailScreen> {
   RentalDeal? _deal;
+  RentalDispute? _dispute;
   List<DealMessage> _messages = [];
   bool _loading = true;
   String? _error;
@@ -278,9 +282,7 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    context.showAppSnackBar(message);
   }
 
   void _dismissMessageKeyboard() {
@@ -427,6 +429,14 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
     }
   }
 
+  void _openUserProfile(int userId) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(userId: userId),
+      ),
+    );
+  }
+
   Future<void> _boot() async {
     setState(() {
       _loading = true;
@@ -436,9 +446,14 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
       _me = await AuthStorage.getUser();
       final d = await DealsApi.fetchDeal(widget.dealId);
       final m = await DealsApi.fetchMessages(widget.dealId);
+      RentalDispute? dispute;
+      try {
+        dispute = await DealsApi.fetchDealDispute(widget.dealId);
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _deal = d;
+        _dispute = dispute;
         _messages = m;
         _loading = false;
       });
@@ -882,7 +897,15 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
     if (d.status == 'pending_owner' && d.isOwner) h += 60;
     if (d.status == 'pending_owner' && d.isRenter) h += 52;
     if (d.status == 'active' && d.isOwner) h += 52;
+    if (d.status == 'disputed' || _dispute != null) h += 56;
+    if (_canOpenDispute(d)) h += 48;
     return h;
+  }
+
+  bool _canOpenDispute(RentalDeal d) {
+    if (_dispute != null && _dispute!.isOpen) return false;
+    if (d.status != 'active' && d.status != 'completed') return false;
+    return _dispute == null;
   }
 
   List<Widget> _chatSlivers(
@@ -1031,6 +1054,7 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
       'active' => 'Active — trip in progress',
       'completed' => 'Completed',
       'cancelled' => 'Cancelled',
+      'disputed' => 'Dispute under review',
       _ => s,
     };
   }
@@ -1042,8 +1066,151 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
       'active' => cs.primary,
       'completed' => cs.secondary,
       'cancelled' => cs.error,
+      'disputed' => const Color(0xFFE65100),
       _ => cs.onSurface,
     };
+  }
+
+  Future<void> _openDispute(RentalDeal d) async {
+    List<DisputeReason> reasons;
+    try {
+      reasons = await DealsApi.fetchDisputeReasons();
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack(userFacingError(e));
+      return;
+    }
+    if (reasons.isEmpty) return;
+
+    var reasonCode = reasons.first.code;
+    final descCtrl = TextEditingController();
+    Uint8List? photoBytes;
+    String? photoPath;
+    String photoName = 'evidence.jpg';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Open dispute'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Funds stay on hold until an arbitrator resolves the case. '
+                  'Trip actions are paused.',
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: reasonCode,
+                  decoration: const InputDecoration(labelText: 'Reason'),
+                  items: reasons
+                      .map(
+                        (r) => DropdownMenuItem(
+                          value: r.code,
+                          child: Text(r.label),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (val) => setDlg(() => reasonCode = val ?? reasonCode),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: descCtrl,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    labelText: 'What happened?',
+                    hintText: 'At least 10 characters',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final x = await _picker.pickImage(
+                      source: ImageSource.gallery,
+                      imageQuality: 85,
+                    );
+                    if (x == null) return;
+                    final bytes = await x.readAsBytes();
+                    setDlg(() {
+                      photoBytes = bytes;
+                      photoPath = x.path;
+                      photoName = x.name;
+                    });
+                  },
+                  icon: const Icon(Icons.photo_outlined),
+                  label: Text(
+                    photoBytes != null ? 'Photo attached' : 'Add photo (optional)',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error,
+              ),
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final description = descCtrl.text.trim();
+    descCtrl.dispose();
+    if (ok != true || !mounted) return;
+    if (description.length < 10) {
+      _showSnack('Please describe the issue (at least 10 characters).');
+      return;
+    }
+    try {
+      final dispute = await DealsApi.openDispute(
+        d.id,
+        reasonCode: reasonCode,
+        description: description,
+        photoPath: photoPath,
+        photoBytes: photoBytes,
+        photoFilename: photoName,
+      );
+      if (!mounted) return;
+      setState(() {
+        _dispute = dispute;
+        _deal = RentalDeal(
+          id: d.id,
+          vehicleId: d.vehicleId,
+          vehicleTitle: d.vehicleTitle,
+          renterId: d.renterId,
+          ownerId: d.ownerId,
+          renterName: d.renterName,
+          ownerName: d.ownerName,
+          status: 'disputed',
+          holdAmountCents: d.holdAmountCents,
+          myRole: d.myRole,
+          dayCount: d.dayCount,
+          startDate: d.startDate,
+          endDate: d.endDate,
+          createdAt: d.createdAt,
+        );
+      });
+      context.showAppSnackBar(
+        'Dispute submitted for review.',
+        kind: AppSnackBarKind.success,
+      );
+    } on DealsApiException catch (e) {
+      if (!mounted) return;
+      _showSnack(mapDealActionError(e.code));
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack(userFacingError(e));
+    }
   }
 
   Future<void> _confirmMutate({
@@ -1332,6 +1499,7 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
                                         label: 'Renter',
                                         name: d.renterName,
                                         isMe: me?.id == d.renterId,
+                                        onTap: () => _openUserProfile(d.renterId),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -1341,6 +1509,7 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
                                         label: 'Owner',
                                         name: d.ownerName,
                                         isMe: me?.id == d.ownerId,
+                                        onTap: () => _openUserProfile(d.ownerId),
                                       ),
                                     ),
                                   ],
@@ -1419,6 +1588,65 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
                   ),
                   icon: const Icon(Icons.flag_rounded),
                   label: const Text('Complete trip & release payout'),
+                ),
+              ),
+            ),
+          if (_dispute != null && (_dispute!.isOpen || d.status == 'disputed'))
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Material(
+                color: const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.gavel_outlined, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _dispute!.isOpen
+                                  ? 'Dispute open — arbitration in progress'
+                                  : 'Dispute resolved',
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_dispute!.reasonLabel}: ${_dispute!.description}',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      if (_dispute!.isResolved &&
+                          (_dispute!.resolutionNote?.isNotEmpty ?? false))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Resolution: ${_dispute!.resolutionNote}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_canOpenDispute(d))
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _openDispute(d),
+                  icon: const Icon(Icons.report_problem_outlined),
+                  label: const Text('Open dispute'),
                 ),
               ),
             ),
@@ -1508,41 +1736,55 @@ class _ParticipantCell extends StatelessWidget {
     required this.label,
     required this.name,
     required this.isMe,
+    required this.onTap,
   });
 
   final IconData icon;
   final String label;
   final String name;
   final bool isMe;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: cs.onSurfaceVariant),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Material(
+      color: const Color(0xFFF8F9FC),
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Row(
             children: [
-              Text(
-                label,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+              Icon(icon, size: 16, color: cs.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      isMe ? '$name (you)' : name,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
-              Text(
-                isMe ? '$name (you)' : name,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
-                overflow: TextOverflow.ellipsis,
-              ),
+              Icon(Icons.chevron_right_rounded, size: 18, color: cs.onSurfaceVariant),
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 }

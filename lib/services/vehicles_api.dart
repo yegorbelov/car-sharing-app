@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/api_config.dart';
 import '../core/auth_storage.dart';
+import '../models/vehicle.dart';
 import '../models/vehicle_review.dart';
 
 class VehiclePhotoUploadResult {
@@ -60,6 +61,25 @@ class VehiclesApi {
         .toList();
   }
 
+  static Future<List<Vehicle>> fetchMine() async {
+    final token = await AuthStorage.getToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/vehicles/mine');
+    final res = await http.get(
+      uri,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (res.statusCode != 200) _throwIfUnauthorized(res);
+    final list = jsonDecode(res.body) as List<dynamic>;
+    return list
+        .map((e) => Vehicle.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   static Future<List<Map<String, dynamic>>> fetchRaw() async {
     final uri = Uri.parse('${apiBaseUrl()}/api/v1/vehicles');
     final res = await http.get(uri, headers: const {'Accept': 'application/json'});
@@ -69,6 +89,20 @@ class VehiclesApi {
     final list = jsonDecode(res.body) as List<dynamic>;
     return list.cast<Map<String, dynamic>>();
   }
+
+  static Map<String, dynamic> _rentalRulesBody({
+    required int minRentalDays,
+    required int maxRentalDays,
+    required int seatCount,
+    required bool petsAllowed,
+    required String fuelReturnPolicy,
+  }) => {
+    'minRentalDays': minRentalDays,
+    'maxRentalDays': maxRentalDays,
+    'seatCount': seatCount,
+    'petsAllowed': petsAllowed,
+    'fuelReturnPolicy': fuelReturnPolicy.trim().toLowerCase(),
+  };
 
   static Future<Map<String, dynamic>> createListing({
     required String title,
@@ -86,6 +120,13 @@ class VehiclesApi {
     required String conditionSummary,
     required String techNotes,
     required String vin,
+    required double latitude,
+    required double longitude,
+    required int minRentalDays,
+    required int maxRentalDays,
+    required int seatCount,
+    required bool petsAllowed,
+    required String fuelReturnPolicy,
   }) async {
     final token = await AuthStorage.getToken();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
@@ -106,6 +147,15 @@ class VehiclesApi {
       'conditionSummary': conditionSummary.trim(),
       'techNotes': techNotes.trim(),
       'vin': vin.trim().toUpperCase(),
+      'latitude': latitude,
+      'longitude': longitude,
+      ..._rentalRulesBody(
+        minRentalDays: minRentalDays,
+        maxRentalDays: maxRentalDays,
+        seatCount: seatCount,
+        petsAllowed: petsAllowed,
+        fuelReturnPolicy: fuelReturnPolicy,
+      ),
     };
     if (rating != null) body['rating'] = rating;
 
@@ -120,6 +170,107 @@ class VehiclesApi {
     );
     if (res.statusCode != 201) _throwIfUnauthorized(res);
     return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  static Future<Vehicle> updateListing({
+    required int vehicleId,
+    required String title,
+    required String city,
+    required String className,
+    required double pricePerDay,
+    required int mileageKm,
+    required int modelYear,
+    required String transmission,
+    required String fuelType,
+    required String drivetrain,
+    required int engineCc,
+    required String exteriorColor,
+    required String conditionSummary,
+    required String techNotes,
+    required String vin,
+    required double latitude,
+    required double longitude,
+    required int minRentalDays,
+    required int maxRentalDays,
+    required int seatCount,
+    required bool petsAllowed,
+    required String fuelReturnPolicy,
+    List<String>? photoUrls,
+  }) async {
+    final token = await AuthStorage.getToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/vehicles/$vehicleId');
+    final body = <String, dynamic>{
+      'title': title.trim(),
+      'city': city.trim(),
+      'class': className.trim(),
+      'pricePerDay': pricePerDay,
+      'mileageKm': mileageKm,
+      'modelYear': modelYear,
+      'transmission': transmission.trim().toLowerCase(),
+      'fuelType': fuelType.trim().toLowerCase(),
+      'drivetrain': drivetrain.trim().toLowerCase(),
+      'engineCc': engineCc,
+      'exteriorColor': exteriorColor.trim(),
+      'conditionSummary': conditionSummary.trim(),
+      'techNotes': techNotes.trim(),
+      'vin': vin.trim().toUpperCase(),
+      'latitude': latitude,
+      'longitude': longitude,
+      ..._rentalRulesBody(
+        minRentalDays: minRentalDays,
+        maxRentalDays: maxRentalDays,
+        seatCount: seatCount,
+        petsAllowed: petsAllowed,
+        fuelReturnPolicy: fuelReturnPolicy,
+      ),
+    };
+    if (photoUrls != null) body['photoUrls'] = photoUrls;
+
+    final res = await http.patch(
+      uri,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(body),
+    );
+    if (res.statusCode != 200) _throwIfUnauthorized(res);
+    return Vehicle.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  static Future<Vehicle> publishListing(int vehicleId) async {
+    final token = await AuthStorage.getToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/vehicles/$vehicleId/publish');
+    final res = await http.post(
+      uri,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (res.statusCode != 200) _throwIfUnauthorized(res);
+    return Vehicle.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  static Future<Vehicle> unpublishListing(int vehicleId) async {
+    final token = await AuthStorage.getToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/vehicles/$vehicleId/unpublish');
+    final res = await http.post(
+      uri,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (res.statusCode != 200) _throwIfUnauthorized(res);
+    return Vehicle.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
   /// Append a photo for a vehicle (owner only, max 10). Returns updated gallery.

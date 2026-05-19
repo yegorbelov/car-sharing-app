@@ -174,6 +174,7 @@ class _StatusChip extends StatelessWidget {
     final (label, bg, fg) = switch (status) {
       'pending_owner' => ('Pending', cs.tertiaryContainer, cs.onTertiaryContainer),
       'active' => ('Active', cs.primaryContainer, cs.onPrimaryContainer),
+      'disputed' => ('Dispute', const Color(0xFFFFF3E0), const Color(0xFFE65100)),
       'completed' => ('Done', cs.secondaryContainer, cs.onSecondaryContainer),
       'cancelled' => ('Cancelled', cs.errorContainer, cs.onErrorContainer),
       _ => (status, cs.surfaceContainerHighest, cs.onSurface),

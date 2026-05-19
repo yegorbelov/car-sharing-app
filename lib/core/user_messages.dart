@@ -15,6 +15,13 @@ String mapDealActionError(String code) {
     'forbidden' => 'You cannot perform this action on this deal.',
     'not_found' => 'Deal not found.',
     'session_expired' => 'Your session expired. Please sign in again.',
+    'dispute_open' => 'This deal has an open dispute — wait for arbitration.',
+    'dispute_already_open' => 'A dispute is already open for this deal.',
+    'cannot_dispute_status' =>
+        'Disputes can only be opened on active or completed trips.',
+    'description_too_short' => 'Please describe the issue (at least 10 characters).',
+    'owner_insufficient_balance' =>
+        'Owner balance is too low to adjust funds after payout.',
     _ => code.replaceAll('_', ' '),
   };
 }

@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../services/deals_api.dart';
+import '../../services/vehicles_api.dart';
 import '../auth/login_screen.dart';
 import '../bookings/bookings_screen.dart';
 import '../catalog/catalog_screen.dart';
+import '../listings/my_listings_screen.dart';
 import '../profile/profile_screen.dart';
 import '../wallet/wallet_screen.dart';
+import 'home_tabs.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -25,13 +29,71 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
+  bool _showOwnerTab = false;
 
-  void _openCatalog() => setState(() => _selectedIndex = 0);
+  HomeTabs get _tabs => HomeTabs(showListings: _showOwnerTab);
 
-  void _openBookings() => setState(() => _selectedIndex = 1);
+  @override
+  void initState() {
+    super.initState();
+    _refreshHostTab();
+  }
+
+  @override
+  void didUpdateWidget(HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isGuest && !widget.isGuest) {
+      _refreshHostTab();
+    }
+  }
+
+  Future<void> _refreshHostTab() async {
+    if (widget.isGuest) {
+      if (_showOwnerTab && mounted) {
+        setState(() {
+          _showOwnerTab = false;
+          if (_selectedIndex > 0) _selectedIndex = 0;
+        });
+      }
+      return;
+    }
+
+    try {
+      final vehicles = await VehiclesApi.fetchMine();
+      final deals = await DealsApi.fetchMine();
+      final isHost =
+          vehicles.isNotEmpty || deals.any((deal) => deal.isOwner);
+      if (!mounted || isHost == _showOwnerTab) return;
+
+      setState(() {
+        if (isHost && !_showOwnerTab) {
+          _selectedIndex = const HomeTabs(showListings: true)
+              .indexAfterAddingListingsTab(_selectedIndex);
+        } else if (!isHost && _showOwnerTab) {
+          const t = HomeTabs(showListings: true);
+          if (_selectedIndex == t.listings) {
+            _selectedIndex = t.catalog;
+          } else if (_selectedIndex > t.listings) {
+            _selectedIndex -= 1;
+          }
+        }
+        _showOwnerTab = isHost;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _onListingCreated() async {
+    await _refreshHostTab();
+    if (!mounted || !_showOwnerTab) return;
+    setState(() => _selectedIndex = _tabs.listings);
+  }
+
+  void _openCatalog() => setState(() => _selectedIndex = _tabs.catalog);
+
+  void _openBookings() => setState(() => _selectedIndex = _tabs.bookings);
 
   void _onDestinationSelected(int index) {
-    if (widget.isGuest && index != 0) {
+    if (widget.isGuest && index != _tabs.catalog) {
       _promptSignIn();
       return;
     }
@@ -66,33 +128,44 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final t = _tabs;
+
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
         children: [
           CatalogScreen(
-            tabVisible: _selectedIndex == 0,
+            tabVisible: _selectedIndex == t.catalog,
             onSignedIn: widget.onSignedIn,
             onBookingCreated: widget.isGuest ? null : _openBookings,
           ),
+          if (_showOwnerTab)
+            MyListingsScreen(
+              tabVisible: _selectedIndex == t.listings,
+              onListingsChanged: _refreshHostTab,
+            ),
           if (widget.isGuest)
             const SizedBox.shrink()
           else
             BookingsScreen(
               onOpenCatalog: _openCatalog,
-              tabVisible: _selectedIndex == 1,
+              tabVisible: _selectedIndex == t.bookings,
             ),
           if (widget.isGuest)
             const SizedBox.shrink()
           else
-            WalletScreen(tabVisible: _selectedIndex == 2),
+            WalletScreen(tabVisible: _selectedIndex == t.wallet),
           if (widget.isGuest)
             const SizedBox.shrink()
           else
-            ProfileScreen(onSignedOut: widget.onSignedOut),
+            ProfileScreen(
+              onSignedOut: widget.onSignedOut,
+              onListingCreated: _onListingCreated,
+            ),
         ],
       ),
       bottomNavigationBar: _CustomTabBar(
+        showListings: _showOwnerTab,
         selectedIndex: _selectedIndex,
         onTap: _onDestinationSelected,
       ),
@@ -101,8 +174,13 @@ class _HomePageState extends State<HomePage> {
 }
 
 class _CustomTabBar extends StatelessWidget {
-  const _CustomTabBar({required this.selectedIndex, required this.onTap});
+  const _CustomTabBar({
+    required this.showListings,
+    required this.selectedIndex,
+    required this.onTap,
+  });
 
+  final bool showListings;
   final int selectedIndex;
   final ValueChanged<int> onTap;
 
@@ -110,6 +188,7 @@ class _CustomTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final bottom = MediaQuery.paddingOf(context).bottom;
+    final t = HomeTabs(showListings: showListings);
 
     return Container(
       decoration: BoxDecoration(
@@ -132,28 +211,36 @@ class _CustomTabBar extends StatelessWidget {
                 icon: Icons.grid_view_outlined,
                 activeIcon: Icons.grid_view_rounded,
                 label: 'Catalog',
-                selected: selectedIndex == 0,
-                onTap: () => onTap(0),
+                selected: selectedIndex == t.catalog,
+                onTap: () => onTap(t.catalog),
               ),
+              if (showListings)
+                _AnimatedTabButton(
+                  icon: Icons.garage_outlined,
+                  activeIcon: Icons.garage_rounded,
+                  label: 'Listings',
+                  selected: selectedIndex == t.listings,
+                  onTap: () => onTap(t.listings),
+                ),
               _AnimatedTabButton(
                 icon: Icons.event_note_outlined,
                 activeIcon: Icons.event_note_rounded,
                 label: 'Bookings',
-                selected: selectedIndex == 1,
-                onTap: () => onTap(1),
+                selected: selectedIndex == t.bookings,
+                onTap: () => onTap(t.bookings),
               ),
               _AnimatedTabButton(
                 icon: Icons.account_balance_wallet_outlined,
                 activeIcon: Icons.account_balance_wallet_rounded,
                 label: 'Wallet',
-                selected: selectedIndex == 2,
-                onTap: () => onTap(2),
+                selected: selectedIndex == t.wallet,
+                onTap: () => onTap(t.wallet),
               ),
               _AnimatedTabButton(
                 svgIcon: 'assets/icons/profile.svg',
                 label: 'Profile',
-                selected: selectedIndex == 3,
-                onTap: () => onTap(3),
+                selected: selectedIndex == t.profile,
+                onTap: () => onTap(t.profile),
               ),
             ],
           ),

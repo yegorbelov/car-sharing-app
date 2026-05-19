@@ -9,10 +9,13 @@ import '../../core/auth_storage.dart';
 import '../../models/vehicle.dart';
 import '../../core/user_messages.dart';
 import '../../services/deals_api.dart';
+import '../../widgets/app_snackbar.dart';
 import '../../widgets/illustrated_empty_state.dart';
+import '../../widgets/user_profile_preview_card.dart';
 import '../../widgets/vehicle_reviews_sheet.dart';
 import '../../services/vehicles_api.dart';
 import '../auth/login_screen.dart';
+import '../profile/create_listing_screen.dart';
 
 class VehicleDetailScreen extends StatefulWidget {
   const VehicleDetailScreen({
@@ -20,6 +23,9 @@ class VehicleDetailScreen extends StatefulWidget {
     required this.vehicle,
     this.onSignedIn,
     this.onBookingCreated,
+    this.moderationReview = false,
+    this.onModerationApprove,
+    this.onModerationReject,
   });
 
   final Vehicle vehicle;
@@ -29,6 +35,12 @@ class VehicleDetailScreen extends StatefulWidget {
 
   /// Called after a rental request is created successfully.
   final VoidCallback? onBookingCreated;
+
+  /// Moderator preview: full listing without booking; approve/reject bar.
+  final bool moderationReview;
+
+  final Future<void> Function()? onModerationApprove;
+  final Future<void> Function()? onModerationReject;
 
   @override
   State<VehicleDetailScreen> createState() => _VehicleDetailScreenState();
@@ -54,9 +66,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   Future<void> _pickAndUploadPhoto() async {
     if (_vehicle.galleryUrls.length >= 10) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This listing already has 10 photos.')),
-      );
+      context.showAppSnackBar('This listing already has 10 photos.');
       return;
     }
     final picked = await ImagePicker().pickImage(
@@ -79,9 +89,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+      context.showAppSnackBar('Upload failed: $e');
     } finally {
       if (mounted) setState(() => _uploadingPhoto = false);
     }
@@ -128,19 +136,18 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     final me = await AuthStorage.getUser();
     if (!context.mounted) return;
     if (v.ownerUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This listing has no owner yet.')),
-      );
+      context.showAppSnackBar('This listing has no owner yet.');
       return;
     }
     if (me != null && me.id == v.ownerUserId) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You cannot book your own car.')),
-      );
+      context.showAppSnackBar('You cannot book your own car.');
       return;
     }
 
-    var days = 3;
+    final minDays = v.effectiveMinRentalDays;
+    final maxDays = v.effectiveMaxRentalDays;
+    var days = minDays;
+    if (days > maxDays) days = maxDays;
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -217,12 +224,22 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                   ),
                   Slider(
                     value: days.toDouble(),
-                    min: 1,
-                    max: 14,
-                    divisions: 13,
+                    min: minDays.toDouble(),
+                    max: maxDays.toDouble(),
+                    divisions: maxDays > minDays ? maxDays - minDays : null,
                     label: '$days days',
-                    onChanged: (x) => setModal(() => days = x.round()),
+                    onChanged: maxDays > minDays
+                        ? (x) => setModal(() => days = x.round())
+                        : null,
                   ),
+                  if (maxDays == minDays)
+                    Text(
+                      'This listing is rented for $minDays ${minDays == 1 ? 'day' : 'days'} only.',
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   const SizedBox(height: 4),
                   Text(
                     'Hold of \$$hold will be placed until owner accepts or you cancel.',
@@ -262,15 +279,15 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
         'vehicle_unavailable' =>
           'This car already has an active or pending booking.',
         'cannot_rent_own_car' => 'You cannot book your own car.',
+        'invalid_day_count' =>
+          'Choose between ${v.effectiveMinRentalDays} and ${v.effectiveMaxRentalDays} days.',
         'session_expired' => 'Your session expired. Please sign in again.',
         _ => e.code,
       };
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      context.showAppSnackBar(msg);
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(userFacingError(e))),
-      );
+      context.showAppSnackBar(userFacingError(e));
     }
   }
 
@@ -278,7 +295,9 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final v = _vehicle;
-    final isOwner = _myId != null && _myId == v.ownerUserId;
+    final isOwner =
+        !widget.moderationReview && _myId != null && _myId == v.ownerUserId;
+    final moderation = widget.moderationReview;
 
     const heroHeight = 260.0;
     const headerExpandedHeight = heroHeight;
@@ -308,7 +327,20 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
               ),
             ),
             actions: [
-              if (isOwner)
+              if (isOwner) ...[
+                IconButton(
+                  onPressed: () async {
+                    final updated = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (_) => CreateListingScreen(vehicle: v),
+                      ),
+                    );
+                    if (!context.mounted || updated != true) return;
+                    Navigator.pop(context, true);
+                  },
+                  icon: const Icon(Icons.edit_rounded),
+                  tooltip: 'Edit listing',
+                ),
                 IconButton(
                   onPressed: v.galleryUrls.length >= 10
                       ? null
@@ -318,12 +350,83 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                       ? 'Max 10 photos'
                       : 'Add photo',
                 ),
+              ],
             ],
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
+                if (moderation)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Material(
+                      color: const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.fact_check_outlined,
+                              size: 22,
+                              color: cs.primary,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Moderation review — check photos, description, and rental rules before approving.',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
+                                      color: const Color(0xFF1B5E20),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (isOwner && v.isPendingModeration)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Material(
+                      color: cs.tertiaryContainer,
+                      borderRadius: BorderRadius.circular(14),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.hourglass_top_rounded,
+                              size: 20,
+                              color: cs.onTertiaryContainer,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Under review — not visible in the catalog yet.',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: cs.onTertiaryContainer,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 Row(
                   children: [
                     Expanded(
@@ -394,6 +497,15 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
 
                 const SizedBox(height: 24),
 
+                if (v.ownerUserId != null && !isOwner) ...[
+                  UserProfilePreviewCard(
+                    userId: v.ownerUserId!,
+                    roleLabel: 'Hosted by',
+                    icon: Icons.key_rounded,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
                 _VehicleSpecsCard(vehicle: v),
 
                 const SizedBox(height: 16),
@@ -408,6 +520,30 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                           icon: Icons.category_outlined,
                           label: 'Class',
                           value: v.subtitle.split(' · ').last,
+                        ),
+                        const Divider(),
+                        _DetailTile(
+                          icon: Icons.date_range_outlined,
+                          label: 'Rental length',
+                          value: v.rentalDaysRangeLabel,
+                        ),
+                        const Divider(),
+                        _DetailTile(
+                          icon: Icons.event_seat_outlined,
+                          label: 'Seats',
+                          value: v.seatsLabel,
+                        ),
+                        const Divider(),
+                        _DetailTile(
+                          icon: Icons.pets_outlined,
+                          label: 'Pets',
+                          value: v.petsPolicyLabel,
+                        ),
+                        const Divider(),
+                        _DetailTile(
+                          icon: Icons.local_gas_station_outlined,
+                          label: 'Fuel at return',
+                          value: v.fuelReturnPolicyLabel,
                         ),
                         const Divider(),
                         _DetailTile(
@@ -432,12 +568,17 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: _VehicleDetailBottomBar(
-        isOwner: isOwner,
-        vehicle: v,
-        onRequestRental: _openBookSheet,
-        onAddPhoto: _pickAndUploadPhoto,
-      ),
+      bottomNavigationBar: moderation
+          ? _ModerationReviewBottomBar(
+              onApprove: widget.onModerationApprove,
+              onReject: widget.onModerationReject,
+            )
+          : _VehicleDetailBottomBar(
+              isOwner: isOwner,
+              vehicle: v,
+              onRequestRental: _openBookSheet,
+              onAddPhoto: _pickAndUploadPhoto,
+            ),
     );
   }
 }
@@ -546,6 +687,67 @@ class _VehicleCollapsingTitle extends StatelessWidget {
       );
     }
     return IgnorePointer(child: content);
+  }
+}
+
+class _ModerationReviewBottomBar extends StatelessWidget {
+  const _ModerationReviewBottomBar({
+    this.onApprove,
+    this.onReject,
+  });
+
+  final Future<void> Function()? onApprove;
+  final Future<void> Function()? onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      elevation: 12,
+      shadowColor: Colors.black.withValues(alpha: 0.12),
+      color: cs.surface,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.45)),
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onReject == null
+                        ? null
+                        : () async => onReject!(),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                      foregroundColor: cs.error,
+                    ),
+                    child: const Text('Reject'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: onApprove == null
+                        ? null
+                        : () async => onApprove!(),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                    ),
+                    child: const Text('Approve'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -787,6 +989,14 @@ class _VehicleSpecsCard extends StatelessWidget {
       rows.add(_DetailTile(icon: icon, label: label, value: value));
     }
 
+    pushTile(Icons.date_range_outlined, 'Rental length', v.rentalDaysRangeLabel);
+    pushTile(Icons.event_seat_outlined, 'Seats', v.seatsLabel);
+    pushTile(Icons.pets_outlined, 'Pets', v.petsPolicyLabel);
+    pushTile(
+      Icons.local_gas_station_outlined,
+      'Fuel at return',
+      v.fuelReturnPolicyLabel,
+    );
     if (v.mileageKm > 0) {
       pushTile(Icons.speed_outlined, 'Mileage', '${v.mileageKm} km');
     }

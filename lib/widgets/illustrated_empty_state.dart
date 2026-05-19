@@ -21,6 +21,43 @@ class IllustratedEmptyState extends StatelessWidget {
   static const catalogEmpty = 'assets/illustrations/Electric car-amico.svg';
   static const walletEmpty = 'assets/illustrations/Plain credit card-amico.svg';
   static const orderSuccess = 'assets/illustrations/Order ahead-bro.svg';
+  static const listingModeration =
+      'assets/illustrations/time flies-cuate.svg';
+
+  /// Bottom sheet after a new listing is submitted for moderation.
+  static Future<void> showListingSubmittedForReview(BuildContext context) {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        final bottom = MediaQuery.paddingOf(ctx).bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(24, 4, 24, 16 + bottom),
+          child: IllustratedEmptyState(
+            assetPath: listingModeration,
+            title: 'Sent for review',
+            subtitle:
+                'Your listing is with our team. We usually approve within 24 hours — you’ll see it in the catalog once it’s live.',
+            illustrationHeight: 220,
+            action: FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(50),
+                backgroundColor: const Color(0xFF111111),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Got it'),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   /// Bottom sheet shown after a rental request is created successfully.
   static Future<void> showOrderSuccess(BuildContext context) {

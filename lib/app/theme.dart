@@ -182,6 +182,19 @@ ThemeData buildAppTheme() {
       thickness: 1,
       space: 1,
     ),
+
+    snackBarTheme: SnackBarThemeData(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      contentTextStyle: TextStyle(
+        color: scheme.onSurface,
+        fontWeight: FontWeight.w600,
+        fontSize: 14,
+        height: 1.3,
+      ),
+    ),
   );
 }
 

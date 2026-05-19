@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/api_config.dart';
 import '../core/auth_storage.dart';
+import '../models/dispute.dart';
 import '../models/rental_deal.dart';
 
 class DealsApiException implements Exception {
@@ -159,6 +160,85 @@ class DealsApi {
     final uri = Uri.parse('${apiBaseUrl()}/api/v1/deals/$dealId/complete');
     final res = await http.post(uri, headers: await _authHeaders());
     if (res.statusCode != 200) _throwOrUnauthorized(res);
+  }
+
+  static Future<List<DisputeReason>> fetchDisputeReasons() async {
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/disputes/reasons');
+    final res = await http.get(uri, headers: await _authHeaders());
+    if (res.statusCode != 200) _throwOrUnauthorized(res);
+    final list = jsonDecode(res.body) as List<dynamic>;
+    return list
+        .map((e) => DisputeReason.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Returns null when the deal has no dispute record.
+  static Future<RentalDispute?> fetchDealDispute(int dealId) async {
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/deals/$dealId/dispute');
+    final res = await http.get(uri, headers: await _authHeaders());
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) _throwOrUnauthorized(res);
+    return RentalDispute.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  static Future<RentalDispute> openDispute(
+    int dealId, {
+    required String reasonCode,
+    required String description,
+    String? photoPath,
+    List<int>? photoBytes,
+    String photoFilename = 'evidence.jpg',
+    String caption = '',
+  }) async {
+    final token = await AuthStorage.getToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
+    final uri = Uri.parse('${apiBaseUrl()}/api/v1/deals/$dealId/dispute');
+    final hasPhoto =
+        photoPath != null || (photoBytes != null && photoBytes.isNotEmpty);
+
+    if (hasPhoto) {
+      final request = http.MultipartRequest('POST', uri)
+        ..headers['Authorization'] = 'Bearer $token'
+        ..headers['Accept'] = 'application/json'
+        ..fields['reasonCode'] = reasonCode
+        ..fields['description'] = description;
+      if (caption.isNotEmpty) request.fields['caption'] = caption;
+      if (photoBytes != null) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'photo',
+            photoBytes,
+            filename: photoFilename,
+          ),
+        );
+      } else {
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'photo',
+            photoPath!,
+            filename: _filenameFromPath(photoPath, photoFilename),
+          ),
+        );
+      }
+      final streamed = await request.send();
+      final res = await http.Response.fromStream(streamed);
+      if (res.statusCode != 201) _throwOrUnauthorized(res);
+      return RentalDispute.fromJson(
+        jsonDecode(res.body) as Map<String, dynamic>,
+      );
+    }
+
+    final res = await http.post(
+      uri,
+      headers: await _authHeaders(),
+      body: jsonEncode({
+        'reasonCode': reasonCode,
+        'description': description,
+      }),
+    );
+    if (res.statusCode != 201) _throwOrUnauthorized(res);
+    return RentalDispute.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
   static Future<WalletData> fetchWallet() async {

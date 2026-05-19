@@ -21,6 +21,16 @@ class Vehicle {
     this.conditionSummary = '',
     this.techNotes = '',
     this.vin = '',
+    this.listingStatus = 'published',
+    this.latitude,
+    this.longitude,
+    this.completedTrips = 0,
+    this.minRentalDays = 1,
+    this.maxRentalDays = 14,
+    this.seatCount = 5,
+    this.petsAllowed = false,
+    this.fuelReturnPolicy = 'same_level',
+    this.moderationNote = '',
   });
 
   final int id;
@@ -32,6 +42,7 @@ class Vehicle {
   final int reviewCount;
   final String createdAt;
   final int? ownerUserId;
+
   /// Primary cover URL (first gallery image when present).
   final String photoUrl;
   final List<String> photoUrls;
@@ -45,8 +56,66 @@ class Vehicle {
   final String conditionSummary;
   final String techNotes;
   final String vin;
+  final String listingStatus;
+  final double? latitude;
+  final double? longitude;
+  final int completedTrips;
+  final int minRentalDays;
+  final int maxRentalDays;
+  final int seatCount;
+  final bool petsAllowed;
+  final String fuelReturnPolicy;
+  final String moderationNote;
 
   double get pricePerDay => pricePerDayCents / 100;
+
+  int get effectiveMinRentalDays => minRentalDays > 0 ? minRentalDays : 1;
+
+  int get effectiveMaxRentalDays =>
+      maxRentalDays >= effectiveMinRentalDays ? maxRentalDays : effectiveMinRentalDays;
+
+  String get rentalDaysRangeLabel {
+    final min = effectiveMinRentalDays;
+    final max = effectiveMaxRentalDays;
+    if (min == max) return min == 1 ? '1 day min/max' : '$min days only';
+    return '$min–$max days';
+  }
+
+  String get seatsLabel =>
+      seatCount == 1 ? '1 seat' : '$seatCount seats';
+
+  String get petsPolicyLabel => petsAllowed ? 'Pets allowed' : 'No pets';
+
+  String get fuelReturnPolicyLabel => switch (fuelReturnPolicy) {
+    'full_tank' => 'Return with full tank',
+    'quarter_tank' => 'Return with at least ¼ tank',
+    'same_level' || _ => 'Return with same fuel level',
+  };
+
+  bool get isPublished => listingStatus == 'published';
+
+  bool get isPendingModeration => listingStatus == 'pending_moderation';
+
+  bool get isUnpublished => listingStatus == 'unpublished';
+
+  bool get isRejected => listingStatus == 'rejected';
+
+  bool get canUnpublish => isPublished || isPendingModeration;
+
+  bool get hasModerationNote => moderationNote.trim().isNotEmpty;
+
+  bool get canRepublish => isUnpublished;
+
+  String get listingStatusLabel => switch (listingStatus) {
+    'published' => 'Published',
+    'pending_moderation' => 'Under review',
+    'unpublished' => 'Unpublished',
+    'rejected' => 'Rejected',
+    _ => listingStatus,
+  };
+
+  String get completedTripsLabel =>
+      completedTrips == 1 ? '1 successful trip' : '$completedTrips successful trips';
 
   DateTime? get createdAtDate {
     if (createdAt.isEmpty) return null;
@@ -74,19 +143,22 @@ class Vehicle {
   }
 
   String _classLabel(String c) => switch (c.toLowerCase()) {
-        'sedan' => 'Sedan',
-        'suv' => 'SUV',
-        'economy' => 'Economy',
-        'comfort' => 'Comfort',
-        'business' => 'Business',
-        _ => c,
-      };
+    'sedan' => 'Sedan',
+    'suv' => 'SUV',
+    'economy' => 'Economy',
+    'comfort' => 'Comfort',
+    'business' => 'Business',
+    _ => c,
+  };
 
   factory Vehicle.fromJson(Map<String, dynamic> j) {
     final rawPhotos = j['photoUrls'];
     var urls = <String>[];
     if (rawPhotos is List) {
-      urls = rawPhotos.map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
+      urls = rawPhotos
+          .map((e) => e.toString())
+          .where((s) => s.isNotEmpty)
+          .toList();
     }
     var cover = (j['photoUrl'] as String?) ?? '';
     if (cover.isEmpty && urls.isNotEmpty) {
@@ -115,6 +187,17 @@ class Vehicle {
       conditionSummary: (j['conditionSummary'] as String?) ?? '',
       techNotes: (j['techNotes'] as String?) ?? '',
       vin: (j['vin'] as String?) ?? '',
+      listingStatus: (j['listingStatus'] as String?) ?? 'published',
+      latitude: (j['latitude'] as num?)?.toDouble(),
+      longitude: (j['longitude'] as num?)?.toDouble(),
+      completedTrips: (j['completedTrips'] as num?)?.toInt() ?? 0,
+      minRentalDays: (j['minRentalDays'] as num?)?.toInt() ?? 1,
+      maxRentalDays: (j['maxRentalDays'] as num?)?.toInt() ?? 14,
+      seatCount: (j['seatCount'] as num?)?.toInt() ?? 5,
+      petsAllowed: j['petsAllowed'] as bool? ?? false,
+      fuelReturnPolicy:
+          (j['fuelReturnPolicy'] as String?)?.trim() ?? 'same_level',
+      moderationNote: (j['moderationNote'] as String?) ?? '',
     );
   }
 
@@ -140,6 +223,16 @@ class Vehicle {
     String? conditionSummary,
     String? techNotes,
     String? vin,
+    String? listingStatus,
+    double? latitude,
+    double? longitude,
+    int? completedTrips,
+    int? minRentalDays,
+    int? maxRentalDays,
+    int? seatCount,
+    bool? petsAllowed,
+    String? fuelReturnPolicy,
+    String? moderationNote,
   }) {
     return Vehicle(
       id: id ?? this.id,
@@ -163,6 +256,16 @@ class Vehicle {
       conditionSummary: conditionSummary ?? this.conditionSummary,
       techNotes: techNotes ?? this.techNotes,
       vin: vin ?? this.vin,
+      listingStatus: listingStatus ?? this.listingStatus,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      completedTrips: completedTrips ?? this.completedTrips,
+      minRentalDays: minRentalDays ?? this.minRentalDays,
+      maxRentalDays: maxRentalDays ?? this.maxRentalDays,
+      seatCount: seatCount ?? this.seatCount,
+      petsAllowed: petsAllowed ?? this.petsAllowed,
+      fuelReturnPolicy: fuelReturnPolicy ?? this.fuelReturnPolicy,
+      moderationNote: moderationNote ?? this.moderationNote,
     );
   }
 }

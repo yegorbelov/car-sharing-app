@@ -3,7 +3,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../core/api_config.dart';
 import '../../models/vehicle.dart';
-import '../../widgets/app_input.dart';
+import '../../widgets/catalog_search_field.dart';
+import '../../widgets/completed_trips_label.dart';
 import '../../widgets/illustrated_empty_state.dart';
 import '../../services/vehicles_api.dart';
 import 'vehicle_detail_screen.dart';
@@ -65,6 +66,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   int? _minModelYear;
   int? _maxModelYear;
   CatalogSort _sort = CatalogSort.relevance;
+  bool _searchActive = false;
 
   int get _selectedClassIndex {
     for (var i = 0; i < _classValues.length; i++) {
@@ -102,10 +104,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
     if (q.isNotEmpty) {
       list = list
           .where(
-            (v) =>
-                '${v.title} ${v.city} ${v.className} ${v.modelYear}'
-                    .toLowerCase()
-                    .contains(q),
+            (v) => '${v.title} ${v.city} ${v.className} ${v.modelYear}'
+                .toLowerCase()
+                .contains(q),
           )
           .toList();
     }
@@ -175,13 +176,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
           return a.reviewCount.compareTo(b.reviewCount);
         });
       case CatalogSort.priceLow:
-        list.sort(
-          (a, b) => a.pricePerDayCents.compareTo(b.pricePerDayCents),
-        );
+        list.sort((a, b) => a.pricePerDayCents.compareTo(b.pricePerDayCents));
       case CatalogSort.priceHigh:
-        list.sort(
-          (a, b) => b.pricePerDayCents.compareTo(a.pricePerDayCents),
-        );
+        list.sort((a, b) => b.pricePerDayCents.compareTo(a.pricePerDayCents));
       case CatalogSort.reviewsMost:
         list.sort((a, b) {
           final c = b.reviewCount.compareTo(a.reviewCount);
@@ -381,6 +378,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
     if (scrolled != _scrolled) setState(() => _scrolled = scrolled);
   }
 
+  void _onSearchSuggestionPicked(CatalogSearchSuggestion s) {
+    _searchCtrl.text = s.insertText;
+    setState(() => _searchActive = false);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -393,60 +395,81 @@ class _CatalogScreenState extends State<CatalogScreen> {
     final cs = Theme.of(context).colorScheme;
     final visible = _filteredVehicles;
 
-    return Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Material(
-            color: cs.surface,
-            elevation: _scrolled ? 1 : 0,
-            shadowColor: Colors.black26,
-            child: SafeArea(
-              bottom: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _CatalogSearchBar(
-                    controller: _searchCtrl,
-                    onSortTap: _showSortSheet,
-                    onQueryChanged: () => setState(() {}),
-                  ),
-                  _CatalogFilterStrip(
-                    labels: _classLabels,
-                    values: _classValues,
-                    selectedIndex: _selectedClassIndex,
-                    yearFilterActive:
-                        _minModelYear != null || _maxModelYear != null,
-                    yearFilterLabel: _yearFilterSummary,
-                    onClassSelected: (value) {
-                      setState(() {
-                        final isSelected = _selectedClass == value;
-                        _selectedClass = isSelected ? null : value;
-                      });
-                    },
-                    onYearTap: _showYearFilterSheet,
-                  ),
-                  Divider(
-                    height: 1,
-                    color: cs.outlineVariant.withValues(alpha: 0.4),
-                  ),
-                ],
+    return PopScope(
+      canPop: !_searchActive,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _searchActive) {
+          setState(() => _searchActive = false);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: cs.surface,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Material(
+              color: cs.surface,
+              elevation: !_searchActive && _scrolled ? 1 : 0,
+              shadowColor: Colors.black26,
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CatalogSearchField(
+                      controller: _searchCtrl,
+                      searchActive: _searchActive,
+                      onSearchModeChanged: (active) {
+                        setState(() => _searchActive = active);
+                      },
+                      onQueryChanged: () => setState(() {}),
+                      onSortTap: _showSortSheet,
+                    ),
+                    if (!_searchActive) ...[
+                      _CatalogFilterStrip(
+                        labels: _classLabels,
+                        values: _classValues,
+                        selectedIndex: _selectedClassIndex,
+                        yearFilterActive:
+                            _minModelYear != null || _maxModelYear != null,
+                        yearFilterLabel: _yearFilterSummary,
+                        onClassSelected: (value) {
+                          setState(() {
+                            final isSelected = _selectedClass == value;
+                            _selectedClass = isSelected ? null : value;
+                          });
+                        },
+                        onYearTap: _showYearFilterSheet,
+                      ),
+                      Divider(
+                        height: 1,
+                        color: cs.outlineVariant.withValues(alpha: 0.4),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
-          ),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _load,
-              child: CustomScrollView(
-                controller: _scrollCtrl,
-                primary: false,
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: _buildContentSlivers(context, cs, visible),
-              ),
+            Expanded(
+              child: _searchActive
+                  ? CatalogSearchSuggestionsView(
+                      vehicles: _vehicles,
+                      query: _searchCtrl.text,
+                      onPick: _onSearchSuggestionPicked,
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: CustomScrollView(
+                        controller: _scrollCtrl,
+                        primary: false,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: _buildContentSlivers(context, cs, visible),
+                      ),
+                    ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -546,48 +569,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 }
 
-class _CatalogSearchBar extends StatelessWidget {
-  const _CatalogSearchBar({
-    required this.controller,
-    required this.onSortTap,
-    required this.onQueryChanged,
-  });
-
-  final TextEditingController controller;
-  final VoidCallback onSortTap;
-  final VoidCallback onQueryChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
-      child: TextField(
-        controller: controller,
-        decoration: AppInputs.search(
-          context,
-          hintText: 'City, model, year…',
-          icon: Icon(
-            Icons.search_rounded,
-            size: 22,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.75),
-          ),
-        ).copyWith(
-          suffixIcon: IconButton(
-            onPressed: onSortTap,
-            tooltip: 'Sort',
-            icon: Icon(
-              Icons.swap_vert_rounded,
-              color: cs.onSurfaceVariant,
-            ),
-          ),
-        ),
-        onChanged: (_) => onQueryChanged(),
-      ),
-    );
-  }
-}
-
 /// Horizontal class filters with a sliding pill indicator.
 class _CatalogFilterStrip extends StatefulWidget {
   const _CatalogFilterStrip({
@@ -644,8 +625,7 @@ class _CatalogFilterStripState extends State<_CatalogFilterStrip> {
 
   void _syncIndicator() {
     if (!mounted) return;
-    final trackBox =
-        _trackKey.currentContext?.findRenderObject() as RenderBox?;
+    final trackBox = _trackKey.currentContext?.findRenderObject() as RenderBox?;
     final chipBox =
         _chipKeys[widget.selectedIndex].currentContext?.findRenderObject()
             as RenderBox?;
@@ -920,10 +900,10 @@ class _VehicleCardPhotoStackState extends State<_VehicleCardPhotoStack> {
             left: 12,
             child: IgnorePointer(
               child: _Pill(
-              text: vehicle.className.isNotEmpty
-                  ? vehicle.className[0].toUpperCase() +
-                        vehicle.className.substring(1)
-                  : '',
+                text: vehicle.className.isNotEmpty
+                    ? vehicle.className[0].toUpperCase() +
+                          vehicle.className.substring(1)
+                    : '',
               ),
             ),
           ),
@@ -1022,26 +1002,36 @@ class _VehicleCard extends StatelessWidget {
             // ── Info row ───────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(
-                    Icons.location_on_rounded,
-                    size: 15,
-                    color: cs.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 3),
-                  Expanded(
-                    child: Text(
-                      vehicle.catalogLocationLabel,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  if (vehicle.completedTrips > 0) ...[
+                    CompletedTripsLabel(
+                      count: vehicle.completedTrips,
+                      compact: true,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on_rounded,
+                        size: 15,
                         color: cs.onSurfaceVariant,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: Text(
+                          vehicle.catalogLocationLabel,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
                       vertical: 6,
@@ -1059,6 +1049,8 @@ class _VehicleCard extends StatelessWidget {
                         letterSpacing: 0.1,
                       ),
                     ),
+                  ),
+                    ],
                   ),
                 ],
               ),
