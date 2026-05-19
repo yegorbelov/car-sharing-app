@@ -28,6 +28,8 @@ class _HomePageState extends State<HomePage> {
 
   void _openCatalog() => setState(() => _selectedIndex = 0);
 
+  void _openBookings() => setState(() => _selectedIndex = 1);
+
   void _onDestinationSelected(int index) {
     if (widget.isGuest && index != 0) {
       _promptSignIn();
@@ -71,6 +73,7 @@ class _HomePageState extends State<HomePage> {
           CatalogScreen(
             tabVisible: _selectedIndex == 0,
             onSignedIn: widget.onSignedIn,
+            onBookingCreated: widget.isGuest ? null : _openBookings,
           ),
           if (widget.isGuest)
             const SizedBox.shrink()

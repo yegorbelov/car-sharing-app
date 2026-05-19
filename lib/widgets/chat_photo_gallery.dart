@@ -39,10 +39,7 @@ Future<void> showChatPhotoGallery(
       pageBuilder: (context, animation, secondaryAnimation) {
         return FadeTransition(
           opacity: animation,
-          child: _ChatPhotoGalleryPage(
-            photos: photos,
-            initialIndex: index,
-          ),
+          child: _ChatPhotoGalleryPage(photos: photos, initialIndex: index),
         );
       },
     ),
@@ -141,12 +138,18 @@ class _ChatPhotoGalleryPageState extends State<_ChatPhotoGalleryPage> {
               child: SafeArea(
                 bottom: false,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 4,
+                  ),
                   child: Row(
                     children: [
                       IconButton(
                         onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close_rounded, color: Colors.white),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                        ),
                         tooltip: 'Close',
                       ),
                       Expanded(
@@ -170,62 +173,62 @@ class _ChatPhotoGalleryPageState extends State<_ChatPhotoGalleryPage> {
             ),
           ),
           Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.78),
-                      Colors.transparent,
-                    ],
-                  ),
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.78),
+                    Colors.transparent,
+                  ],
                 ),
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (widget.photos.length > 1)
-                          Text(
-                            photo.senderName,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                        if (hasCaption) ...[
-                          if (widget.photos.length > 1) const SizedBox(height: 4),
-                          Text(
-                            photo.caption!,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 6),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.photos.length > 1)
                         Text(
-                          photo.time,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.65),
-                            fontSize: 12,
+                          photo.senderName,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      if (hasCaption) ...[
+                        if (widget.photos.length > 1) const SizedBox(height: 4),
+                        Text(
+                          photo.caption!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            height: 1.35,
                           ),
                         ),
                       ],
-                    ),
+                      const SizedBox(height: 6),
+                      Text(
+                        photo.time,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.65),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
+          ),
         ],
       ),
     );

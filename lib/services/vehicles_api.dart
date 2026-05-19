@@ -27,6 +27,25 @@ class VehiclePhotoUploadResult {
 class VehiclesApi {
   VehiclesApi._();
 
+  static void Function()? onUnauthorized;
+
+  static Never _throwIfUnauthorized(http.Response res) {
+    if (res.statusCode == 401) {
+      onUnauthorized?.call();
+      throw StateError('session_expired');
+    }
+    throw Exception(_errorMessage(res));
+  }
+
+  static String _errorMessage(http.Response res) {
+    String msg = res.body;
+    try {
+      final m = jsonDecode(res.body);
+      if (m is Map && m['error'] is String) msg = m['error'] as String;
+    } catch (_) {}
+    return msg;
+  }
+
   static Future<List<Map<String, dynamic>>> fetchRaw() async {
     final uri = Uri.parse('${apiBaseUrl()}/api/v1/vehicles');
     final res = await http.get(uri, headers: const {'Accept': 'application/json'});
@@ -85,14 +104,7 @@ class VehiclesApi {
       },
       body: jsonEncode(body),
     );
-    if (res.statusCode != 201) {
-      String msg = res.body;
-      try {
-        final m = jsonDecode(res.body);
-        if (m is Map && m['error'] is String) msg = m['error'] as String;
-      } catch (_) {}
-      throw Exception(msg);
-    }
+    if (res.statusCode != 201) _throwIfUnauthorized(res);
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
@@ -112,14 +124,7 @@ class VehiclesApi {
 
     final streamed = await request.send();
     final res = await http.Response.fromStream(streamed);
-    if (res.statusCode != 200) {
-      String msg = res.body;
-      try {
-        final m = jsonDecode(res.body);
-        if (m is Map && m['error'] is String) msg = m['error'] as String;
-      } catch (_) {}
-      throw Exception(msg);
-    }
+    if (res.statusCode != 200) _throwIfUnauthorized(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     return VehiclePhotoUploadResult.fromJson(body);
   }

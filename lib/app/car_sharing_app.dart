@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../core/auth_storage.dart';
 import '../screens/home/home.dart';
+import '../services/auth_api.dart';
 import '../services/deals_api.dart';
+import '../services/vehicles_api.dart';
 import 'theme.dart';
 
 class CarSharingApp extends StatefulWidget {
@@ -20,12 +22,16 @@ class _CarSharingAppState extends State<CarSharingApp> {
   void initState() {
     super.initState();
     DealsApi.onUnauthorized = _forceSignOut;
+    AuthApi.onUnauthorized = _forceSignOut;
+    VehiclesApi.onUnauthorized = _forceSignOut;
     _restore();
   }
 
   @override
   void dispose() {
     DealsApi.onUnauthorized = null;
+    AuthApi.onUnauthorized = null;
+    VehiclesApi.onUnauthorized = null;
     super.dispose();
   }
 

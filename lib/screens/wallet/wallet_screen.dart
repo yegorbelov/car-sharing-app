@@ -221,7 +221,7 @@ class _WalletScreenState extends State<WalletScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               trailing: Text(
-                                '${r.deltaCents < 0 ? '−' : '+'}​\$${(r.deltaCents.abs() / 100).toStringAsFixed(2)}',
+                                '${r.deltaCents < 0 ? '-' : '+'}\$${(r.deltaCents.abs() / 100).toStringAsFixed(2)}',
                                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                       fontWeight: FontWeight.w700,
                                       color: r.deltaCents < 0 ? cs.error : cs.primary,

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/api_config.dart';
 import '../../core/auth_storage.dart';
 import '../../models/vehicle.dart';
+import '../../core/user_messages.dart';
 import '../../services/deals_api.dart';
 import '../../widgets/illustrated_empty_state.dart';
 import '../../services/vehicles_api.dart';
@@ -17,12 +18,16 @@ class VehicleDetailScreen extends StatefulWidget {
     super.key,
     required this.vehicle,
     this.onSignedIn,
+    this.onBookingCreated,
   });
 
   final Vehicle vehicle;
 
   /// Called after a guest successfully signs in from this screen.
   final VoidCallback? onSignedIn;
+
+  /// Called after a rental request is created successfully.
+  final VoidCallback? onBookingCreated;
 
   @override
   State<VehicleDetailScreen> createState() => _VehicleDetailScreenState();
@@ -113,6 +118,10 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
           ),
         ),
       );
+      if (!context.mounted) return;
+      await _loadMyId();
+      if (!context.mounted) return;
+      await _openBookSheet();
       return;
     }
     final me = await AuthStorage.getUser();
@@ -243,6 +252,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       if (!context.mounted) return;
       await IllustratedEmptyState.showOrderSuccess(context);
       if (!context.mounted) return;
+      widget.onBookingCreated?.call();
       Navigator.of(context).pop();
     } on DealsApiException catch (e) {
       if (!context.mounted) return;
@@ -257,7 +267,9 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(userFacingError(e))),
+      );
     }
   }
 

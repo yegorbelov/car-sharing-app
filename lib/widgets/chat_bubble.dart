@@ -23,8 +23,11 @@ class ChatBubble extends StatelessWidget {
     this.attachmentType,
     this.attachmentName,
     this.onLongPress,
+    this.onReplyTap,
     this.onImageTap,
+    this.onFileTap,
     this.onAttachmentLoaded,
+    this.highlighted = false,
   });
 
   final String text;
@@ -44,8 +47,11 @@ class ChatBubble extends StatelessWidget {
   final String? attachmentType;
   final String? attachmentName;
   final VoidCallback? onLongPress;
+  final VoidCallback? onReplyTap;
   final VoidCallback? onImageTap;
+  final VoidCallback? onFileTap;
   final VoidCallback? onAttachmentLoaded;
+  final bool highlighted;
 
   static const _mineFill = Color(0xFF111111);
   static const _bubblePad = EdgeInsets.fromLTRB(11, 7, 11, 9);
@@ -83,8 +89,12 @@ class ChatBubble extends StatelessWidget {
       return BorderRadius.only(topLeft: topLeft, topRight: topRight);
     }
 
-    final bottomLeft = Radius.circular(!isMine && compactEdgeBottom ? rEdge : r);
-    final bottomRight = Radius.circular(isMine && compactEdgeBottom ? rEdge : r);
+    final bottomLeft = Radius.circular(
+      !isMine && compactEdgeBottom ? rEdge : r,
+    );
+    final bottomRight = Radius.circular(
+      isMine && compactEdgeBottom ? rEdge : r,
+    );
     return BorderRadius.only(
       topLeft: topLeft,
       topRight: topRight,
@@ -111,7 +121,11 @@ class ChatBubble extends StatelessWidget {
         if (replyTo != null)
           Padding(
             padding: pad,
-            child: _ReplyQuote(reply: replyTo!, isMine: isMine),
+            child: _ReplyQuote(
+              reply: replyTo!,
+              isMine: isMine,
+              onTap: onReplyTap,
+            ),
           ),
         if (_isImageAttachment)
           _AttachmentPreview(
@@ -140,6 +154,7 @@ class ChatBubble extends StatelessWidget {
                   isMine: isMine,
                   maxWidth: maxW - pad.left - pad.right,
                   edgeToEdge: false,
+                  onTap: onFileTap,
                   onLoaded: onAttachmentLoaded,
                 ),
                 if (!_hasText) ...[
@@ -168,6 +183,9 @@ class ChatBubble extends StatelessWidget {
       ],
     );
 
+    final rowAlign =
+        isMine ? Alignment.centerRight : Alignment.centerLeft;
+
     return Padding(
       padding: EdgeInsets.only(
         left: isMine ? 56 : 8,
@@ -175,9 +193,8 @@ class ChatBubble extends StatelessWidget {
         bottom: compactBelow ? 2 : 6,
       ),
       child: Column(
-        crossAxisAlignment: isMine
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (senderName != null) ...[
             Padding(
@@ -186,33 +203,52 @@ class ChatBubble extends StatelessWidget {
                 right: isMine ? 4 : 0,
                 bottom: 4,
               ),
-              child: Text(
-                senderName!,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
+              child: Align(
+                alignment: rowAlign,
+                child: Text(
+                  senderName!,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
           ],
           Align(
-            alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxW),
-              child: GestureDetector(
-                onLongPress: onLongPress,
-                child: PhysicalShape(
-                  clipper: _IMessageBubbleClipper(
-                    isMine: isMine,
-                    showTail: showTail,
-                    compactEdgeTop: compactEdgeTop,
-                    compactEdgeBottom: compactEdgeBottom,
+            alignment: rowAlign,
+            child: IntrinsicWidth(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxW),
+                child: GestureDetector(
+                  onLongPress: onLongPress,
+                  child: PhysicalShape(
+                    clipper: _IMessageBubbleClipper(
+                      isMine: isMine,
+                      showTail: showTail,
+                      compactEdgeTop: compactEdgeTop,
+                      compactEdgeBottom: compactEdgeBottom,
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    color: fill,
+                    elevation: 1,
+                    shadowColor: Colors.black.withValues(alpha: 0.14),
+                    child: Stack(
+                      clipBehavior: Clip.hardEdge,
+                      children: [
+                        inner,
+                        if (highlighted)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: ColoredBox(
+                                color: (isMine ? Colors.white : cs.primary)
+                                    .withValues(alpha: isMine ? 0.18 : 0.12),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                  clipBehavior: Clip.antiAlias,
-                  color: fill,
-                  elevation: 1,
-                  shadowColor: Colors.black.withValues(alpha: 0.14),
-                  child: inner,
                 ),
               ),
             ),
@@ -239,34 +275,36 @@ class _BubbleTextWithTime extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      alignment: WrapAlignment.end,
-      crossAxisAlignment: WrapCrossAlignment.end,
-      spacing: 8,
-      runSpacing: 2,
-      children: [
-        Text(
-          text,
-          style: TextStyle(
-            color: textColor,
-            fontSize: 16,
-            height: 1.28,
-            letterSpacing: -0.2,
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 1),
-          child: Text(
-            time,
-            style: TextStyle(
-              fontSize: 11,
-              height: 1,
-              color: timeColor,
-              letterSpacing: 0.1,
+    const textStyle = TextStyle(
+      fontSize: 16,
+      height: 1.28,
+      letterSpacing: -0.2,
+    );
+    const timeStyle = TextStyle(
+      fontSize: 11,
+      height: 1,
+      letterSpacing: 0.1,
+    );
+
+    return RichText(
+      textDirection: Directionality.of(context),
+      textWidthBasis: TextWidthBasis.longestLine,
+      text: TextSpan(
+        style: textStyle.copyWith(color: textColor),
+        children: [
+          TextSpan(text: text),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.bottom,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8, bottom: 1),
+              child: Text(
+                time,
+                style: timeStyle.copyWith(color: timeColor),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -366,10 +404,11 @@ class _IMessageBubbleClipper extends CustomClipper<Path> {
 }
 
 class _ReplyQuote extends StatelessWidget {
-  const _ReplyQuote({required this.reply, required this.isMine});
+  const _ReplyQuote({required this.reply, required this.isMine, this.onTap});
 
   final DealMessageReply reply;
   final bool isMine;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -388,22 +427,34 @@ class _ReplyQuote extends StatelessWidget {
             _ => 'Message',
           };
 
+    final quote = Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border(left: BorderSide(color: accent, width: 3)),
+      ),
+      child: Text(
+        preview,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 13, height: 1.25, color: fg),
+      ),
+    );
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(10),
-          border: Border(left: BorderSide(color: accent, width: 3)),
-        ),
-        child: Text(
-          preview,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 13, height: 1.25, color: fg),
-        ),
-      ),
+      child: onTap == null
+          ? quote
+          : Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(10),
+                child: quote,
+              ),
+            ),
     );
   }
 }
@@ -514,9 +565,7 @@ class _ChatNetworkPhotoState extends State<_ChatNetworkPhoto> {
     if (_aspectResolved) return;
     _detachAspectListener();
     // Small probe decode for aspect only — avoids loading 4MB+ into memory.
-    _stream = _provider.resolve(
-      const ImageConfiguration(size: Size(96, 96)),
-    );
+    _stream = _provider.resolve(const ImageConfiguration(size: Size(96, 96)));
     _listener = ImageStreamListener((info, _) => _onImageReady(info.image));
     _stream!.addListener(_listener!);
   }
@@ -561,11 +610,7 @@ class _ChatNetworkPhotoState extends State<_ChatNetworkPhoto> {
           children: [
             ColoredBox(color: placeholder),
             Image(
-              image: ResizeImage(
-                _provider,
-                width: cacheW,
-                height: cacheH,
-              ),
+              image: ResizeImage(_provider, width: cacheW, height: cacheH),
               width: size.width,
               height: size.height,
               fit: BoxFit.cover,
@@ -660,15 +705,16 @@ class _AttachmentPreview extends StatelessWidget {
         onLoaded: onLoaded,
       );
     }
-    return _FileTile(name: name, isMine: isMine);
+    return _FileTile(name: name, isMine: isMine, onTap: onTap);
   }
 }
 
 class _FileTile extends StatelessWidget {
-  const _FileTile({required this.name, required this.isMine});
+  const _FileTile({required this.name, required this.isMine, this.onTap});
 
   final String name;
   final bool isMine;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -676,7 +722,7 @@ class _FileTile extends StatelessWidget {
     final bg = isMine
         ? Colors.white.withValues(alpha: 0.12)
         : const Color(0xFFF0F2F8);
-    return Container(
+    final tile = Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: bg,
@@ -699,48 +745,37 @@ class _FileTile extends StatelessWidget {
               ),
             ),
           ),
+          if (onTap != null) ...[
+            const SizedBox(width: 4),
+            Icon(Icons.open_in_new_rounded, size: 18, color: fg.withValues(alpha: 0.7)),
+          ],
         ],
+      ),
+    );
+    if (onTap == null) return tile;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: tile,
       ),
     );
   }
 }
 
-/// Soft gradient + dot pattern for the chat area.
+/// Plain chat background (no pattern).
 class ChatWallpaper extends StatelessWidget {
   const ChatWallpaper({super.key, required this.child});
 
   final Widget child;
 
+  static const backgroundColor = Color(0xFFE9EEF4);
+
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFE9EDF8), Color(0xFFDDE3F2)],
-        ),
-      ),
-      child: CustomPaint(painter: _DotPatternPainter(), child: child),
-    );
+    return ColoredBox(color: backgroundColor, child: child);
   }
-}
-
-class _DotPatternPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF6366F1).withValues(alpha: 0.07);
-    const step = 22.0;
-    for (var y = 0.0; y < size.height; y += step) {
-      for (var x = 0.0; x < size.width; x += step) {
-        canvas.drawCircle(Offset(x + 6, y + 6), 1.4, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Date pill; [sticky] for pinned section headers.
@@ -835,6 +870,41 @@ class ChatEmptyState extends StatelessWidget {
                 height: 1.4,
               ),
             ),
+            const SizedBox(height: 20),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: cs.outlineVariant.withValues(alpha: 0.55),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.gavel_rounded,
+                      size: 20,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.85),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Do not continue this conversation in other messengers. '
+                        'Only messages in this chat will be considered if there is a dispute.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          height: 1.45,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -858,25 +928,31 @@ class ChatPhotoPreviewBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Material(
-      color: const Color(0xFFF0F2F8),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
-        child: Row(
-          children: [
-            GestureDetector(
-              onTap: onTapPreview,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.memory(
-                  Uint8List.fromList(imageBytes),
-                  width: 56,
-                  height: 56,
-                  fit: BoxFit.cover,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+          border: Border.all(color: ChatComposer._barBorder),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 2, 10),
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: onTapPreview,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(
+                    Uint8List.fromList(imageBytes),
+                    width: 56,
+                    height: 56,
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
+              const SizedBox(width: 12),
             Expanded(
               child: GestureDetector(
                 onTap: onTapPreview,
@@ -902,12 +978,223 @@ class ChatPhotoPreviewBar extends StatelessWidget {
                 ),
               ),
             ),
-            IconButton(
-              onPressed: onClose,
-              icon: const Icon(Icons.close_rounded, size: 20),
-              tooltip: 'Remove photo',
+              IconButton(
+                onPressed: onClose,
+                icon: const Icon(Icons.close_rounded, size: 20),
+                tooltip: 'Remove photo',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Message input row at the bottom of the chat screen.
+class ChatComposer extends StatelessWidget {
+  const ChatComposer({
+    super.key,
+    required this.controller,
+    required this.focusNode,
+    required this.hintText,
+    required this.canSend,
+    required this.sending,
+    required this.onSend,
+    required this.onAttach,
+    this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String hintText;
+  final bool canSend;
+  final bool sending;
+  final VoidCallback onSend;
+  final VoidCallback onAttach;
+  final ValueChanged<String>? onChanged;
+
+  static const _fieldFill = Color(0xFFF4F6FA);
+  static const _barBorder = Color(0xFFE2E6EF);
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final sendEnabled = canSend && !sending;
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: _barBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 18,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _ComposerCircleButton(
+                  icon: Icons.add_rounded,
+                  tooltip: 'Attach',
+                  onPressed: sending ? null : onAttach,
+                ),
+                Expanded(
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 42),
+                    decoration: BoxDecoration(
+                      color: _fieldFill,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    alignment: Alignment.center,
+                    child: TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      minLines: 1,
+                      maxLines: 5,
+                      textCapitalization: TextCapitalization.sentences,
+                      textInputAction: TextInputAction.send,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontSize: 16,
+                        height: 1.35,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: hintText,
+                        hintStyle: Theme.of(context).textTheme.bodyLarge
+                            ?.copyWith(
+                              fontSize: 16,
+                              color: cs.onSurfaceVariant.withValues(alpha: 0.45),
+                              fontWeight: FontWeight.w400,
+                            ),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        isDense: true,
+                      ),
+                      onChanged: onChanged,
+                      onEditingComplete: () {
+                        if (sendEnabled) onSend();
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                _ComposerSendButton(
+                  enabled: sendEnabled,
+                  sending: sending,
+                  onTap: sendEnabled ? onSend : null,
+                ),
+              ],
             ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ComposerCircleButton extends StatelessWidget {
+  const _ComposerCircleButton({
+    required this.icon,
+    required this.tooltip,
+    this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final enabled = onPressed != null;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: tooltip,
+      child: Material(
+        color: ChatComposer._fieldFill,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onPressed,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: 42,
+            height: 42,
+            child: Icon(
+              icon,
+              size: 24,
+              color: enabled
+                  ? cs.onSurface
+                  : cs.onSurfaceVariant.withValues(alpha: 0.4),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ComposerSendButton extends StatelessWidget {
+  const _ComposerSendButton({
+    required this.enabled,
+    required this.sending,
+    this.onTap,
+  });
+
+  final bool enabled;
+  final bool sending;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: enabled ? cs.primary : const Color(0xFFE8ECF4),
+        shape: BoxShape.circle,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: Center(
+            child: sending
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: enabled ? cs.onPrimary : cs.onSurfaceVariant,
+                    ),
+                  )
+                : Icon(
+                    Icons.arrow_upward_rounded,
+                    size: 22,
+                    color: enabled
+                        ? cs.onPrimary
+                        : cs.onSurfaceVariant.withValues(alpha: 0.45),
+                  ),
+          ),
         ),
       ),
     );
@@ -921,59 +1208,78 @@ class ChatReplyBar extends StatelessWidget {
     required this.authorName,
     required this.preview,
     required this.onClose,
+    this.onTap,
   });
 
   final String authorName;
   final String preview;
   final VoidCallback onClose;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Material(
-      color: const Color(0xFFF0F2F8),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
-        child: Row(
-          children: [
-            Container(
-              width: 3,
-              height: 40,
-              decoration: BoxDecoration(
-                color: cs.primary,
-                borderRadius: BorderRadius.circular(999),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+          border: Border.all(color: ChatComposer._barBorder),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 2, 10),
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: cs.primary,
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    authorName,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: cs.primary,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onTap,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            authorName,
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: cs.primary,
+                                ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            preview,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    preview,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                  ),
-                ],
+                ),
               ),
-            ),
-            IconButton(
-              onPressed: onClose,
-              icon: const Icon(Icons.close_rounded, size: 20),
-              tooltip: 'Cancel reply',
-            ),
-          ],
+              IconButton(
+                onPressed: onClose,
+                icon: const Icon(Icons.close_rounded, size: 20),
+                tooltip: 'Cancel reply',
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -4,12 +4,13 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-
 import '../../core/auth_storage.dart';
+import '../../core/user_messages.dart';
 import '../../models/auth_user.dart';
 import '../../models/rental_deal.dart';
+import '../../services/chat_attachment_preview.dart';
+import '../../services/deal_chat_socket.dart';
 import '../../services/deals_api.dart';
-import '../../widgets/app_input.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/chat_photo_gallery.dart';
 
@@ -17,7 +18,20 @@ import '../../widgets/chat_photo_gallery.dart';
 String _fmtDate(String iso) {
   try {
     final d = DateTime.parse(iso.replaceAll(' ', 'T'));
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return '${months[d.month - 1]} ${d.day}, ${d.year}';
   } catch (_) {
     return iso.length > 10 ? iso.substring(0, 10) : iso;
@@ -52,7 +66,20 @@ String _chatDateLabel(String iso) {
   final day = DateTime(d.year, d.month, d.day);
   if (day == today) return 'Today';
   if (day == today.subtract(const Duration(days: 1))) return 'Yesterday';
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
   return '${months[d.month - 1]} ${d.day}, ${d.year}';
 }
 
@@ -61,7 +88,9 @@ bool _showChatDateHeader(List<DealMessage> messages, int index) {
   final prev = _parseLocal(messages[index - 1].createdAt);
   final cur = _parseLocal(messages[index].createdAt);
   if (prev == null || cur == null) return false;
-  return prev.year != cur.year || prev.month != cur.month || prev.day != cur.day;
+  return prev.year != cur.year ||
+      prev.month != cur.month ||
+      prev.day != cur.day;
 }
 
 bool _showChatSenderName(List<DealMessage> messages, int index) {
@@ -135,7 +164,8 @@ List<_MessageBubbleGroup> _groupBubbleIndices(
   final groups = <_MessageBubbleGroup>[];
   for (final i in dayIndices) {
     final mine = myId == messages[i].senderId;
-    if (groups.isEmpty || _shouldStartNewBubbleGroup(messages, groups.last.indices.last, i)) {
+    if (groups.isEmpty ||
+        _shouldStartNewBubbleGroup(messages, groups.last.indices.last, i)) {
       groups.add(_MessageBubbleGroup(indices: [i], isMine: mine));
     } else {
       groups.last.indices.add(i);
@@ -166,38 +196,184 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
   bool _loading = true;
   String? _error;
   final _msgCtrl = TextEditingController();
+  final _msgFocus = FocusNode();
   final _scroll = ScrollController();
   AuthUser? _me;
   DealMessage? _replyTo;
   bool _sending = false;
+  bool _canSend = false;
   _PendingPhoto? _pendingPhoto;
   final _picker = ImagePicker();
   final _chatAreaKey = GlobalKey();
   final _dateChipKeys = <String, GlobalKey>{};
+  final _messageKeys = <int, GlobalKey>{};
   Timer? _hideFloatingDateTimer;
   Timer? _scrollToBottomTimer;
+  Timer? _flashMessageTimer;
+  DealChatSocket? _chatSocket;
+  int? _flashMessageId;
   double _floatingDateOpacity = 0;
   String? _floatingDateLabel;
+  static const _bottomSlack = 50.0;
+
   bool _stickToBottom = true;
+  bool _showJumpToBottom = false;
+  bool _dealInfoExpanded = false;
   bool _scrollAfterNextLayout = false;
+  double? _scrollPixelsBeforeMessageUpdate;
 
   @override
   void initState() {
     super.initState();
+    _msgCtrl.addListener(_onMessageTextChanged);
     _boot();
   }
 
   @override
   void dispose() {
+    _chatSocket?.dispose();
     _hideFloatingDateTimer?.cancel();
     _scrollToBottomTimer?.cancel();
+    _flashMessageTimer?.cancel();
+    _msgCtrl.removeListener(_onMessageTextChanged);
     _msgCtrl.dispose();
+    _msgFocus.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
+  void _onMessageTextChanged() {
+    final can = _pendingPhoto != null || _msgCtrl.text.trim().isNotEmpty;
+    if (can == _canSend) return;
+    setState(() => _canSend = can);
+  }
+
+  void _startChatSocket() {
+    _chatSocket?.dispose();
+    _chatSocket = DealChatSocket(
+      dealId: widget.dealId,
+      onNewMessage: _onChatSocketMessage,
+      onUnauthorized: DealsApi.onUnauthorized,
+    )..connect();
+  }
+
+  void _onChatSocketMessage() {
+    if (!mounted || _sending) return;
+    unawaited(_reloadMessages(silent: true));
+  }
+
+  Future<void> _openAttachment(DealMessage message) async {
+    final url = message.attachmentUrl;
+    if (url == null || url.isEmpty || !mounted) return;
+    await previewChatAttachment(
+      context,
+      attachmentUrl: url,
+      attachmentName: message.attachmentName,
+      attachmentType: message.attachmentType,
+    );
+  }
+
+  bool _isPreviewableFile(DealMessage m) =>
+      m.hasAttachment && !m.isImageAttachment;
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _dismissMessageKeyboard() {
+    if (_msgFocus.hasFocus) _msgFocus.unfocus();
+  }
+
   GlobalKey _dateChipKey(String label) =>
       _dateChipKeys.putIfAbsent(label, GlobalKey.new);
+
+  GlobalKey _messageKey(int messageId) =>
+      _messageKeys.putIfAbsent(messageId, GlobalKey.new);
+
+  int? _indexOfMessage(int messageId) {
+    final i = _messages.indexWhere((m) => m.id == messageId);
+    return i < 0 ? null : i;
+  }
+
+  void _flashMessage(int messageId) {
+    _flashMessageTimer?.cancel();
+    setState(() => _flashMessageId = messageId);
+    _flashMessageTimer = Timer(const Duration(milliseconds: 1400), () {
+      if (mounted) setState(() => _flashMessageId = null);
+    });
+  }
+
+  Future<void> _scrollToMessage(int messageId) async {
+    final targetIdx = _indexOfMessage(messageId);
+    if (targetIdx == null) return;
+
+    final key = _messageKey(messageId);
+    const step = 320.0;
+
+    for (var attempt = 0; attempt < 18; attempt++) {
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted) return;
+
+      final ctx = key.currentContext;
+      if (ctx != null && ctx.mounted) {
+        await Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+          alignment: 0.38,
+        );
+        if (!mounted) return;
+        _flashMessage(messageId);
+        _updateBottomProximity();
+        return;
+      }
+
+      if (!_scroll.hasClients) return;
+      final pos = _scroll.position;
+      final max = pos.maxScrollExtent;
+      final estimatedIdx = max > 0
+          ? (pos.pixels / max * (_messages.length - 1)).round()
+          : _messages.length - 1;
+
+      final nextOffset = targetIdx > estimatedIdx
+          ? (pos.pixels - step).clamp(pos.minScrollExtent, max)
+          : (pos.pixels + step).clamp(pos.minScrollExtent, max);
+      if (nextOffset == pos.pixels) break;
+      _scroll.jumpTo(nextOffset);
+    }
+  }
+
+  void _updateBottomProximity() {
+    if (!_scroll.hasClients || _messages.isEmpty) {
+      if (_showJumpToBottom || !_stickToBottom) {
+        setState(() {
+          _showJumpToBottom = false;
+          _stickToBottom = true;
+        });
+      }
+      return;
+    }
+    final pos = _scroll.position;
+    final nearBottom = pos.pixels <= pos.minScrollExtent + _bottomSlack;
+    if (_stickToBottom == nearBottom && _showJumpToBottom == !nearBottom) {
+      return;
+    }
+    setState(() {
+      _stickToBottom = nearBottom;
+      _showJumpToBottom = !nearBottom;
+    });
+  }
+
+  void _jumpToLatest() {
+    setState(() {
+      _stickToBottom = true;
+      _showJumpToBottom = false;
+    });
+    _scrollToBottom(animated: true);
+  }
 
   bool _onChatScroll(ScrollNotification notification) {
     if (notification.depth != 0) return false;
@@ -205,9 +381,8 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
     if (notification is ScrollUpdateNotification ||
         notification is ScrollStartNotification) {
       _hideFloatingDateTimer?.cancel();
-      if (notification is ScrollUpdateNotification && _scroll.hasClients) {
-        final pos = _scroll.position;
-        _stickToBottom = pos.pixels <= pos.minScrollExtent + 96;
+      if (notification is ScrollUpdateNotification) {
+        _updateBottomProximity();
       }
       _syncFloatingDateLabel();
       if (_floatingDateOpacity != 1) {
@@ -216,6 +391,7 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
     }
 
     if (notification is ScrollEndNotification) {
+      _updateBottomProximity();
       _hideFloatingDateTimer?.cancel();
       _hideFloatingDateTimer = Timer(const Duration(milliseconds: 750), () {
         if (mounted) setState(() => _floatingDateOpacity = 0);
@@ -225,7 +401,8 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
   }
 
   void _syncFloatingDateLabel() {
-    final areaBox = _chatAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    final areaBox =
+        _chatAreaKey.currentContext?.findRenderObject() as RenderBox?;
     if (areaBox == null || !areaBox.hasSize) return;
 
     final anchorY = areaBox.localToGlobal(Offset.zero).dy + 52;
@@ -267,57 +444,174 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
       });
       _stickToBottom = true;
       _scheduleScrollToBottom(animated: false);
+      _startChatSocket();
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = userFacingError(e);
         _loading = false;
       });
     }
   }
 
-  /// With [reverse: true], offset 0 = newest messages at the bottom.
-  void _scrollToBottom({bool animated = false}) {
-    if (!_scroll.hasClients) return;
-    final target = _scroll.position.minScrollExtent;
-    if ((_scroll.offset - target).abs() < 2) return;
-    if (animated) {
-      _scroll.animateTo(
-        target,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutCubic,
-      );
-    } else {
-      _scroll.jumpTo(target);
+  void _captureScrollBeforeMessageUpdate() {
+    if (_scroll.hasClients) {
+      _scrollPixelsBeforeMessageUpdate = _scroll.position.pixels;
     }
   }
 
-  void _scheduleScrollToBottom({bool animated = false, bool force = false}) {
+  bool _wasAtBottomBeforeMessageUpdate() {
+    final before = _scrollPixelsBeforeMessageUpdate;
+    _scrollPixelsBeforeMessageUpdate = null;
+    if (before == null || !_scroll.hasClients) return _stickToBottom;
+    return before <= _scroll.position.minScrollExtent + _bottomSlack;
+  }
+
+  static const _scrollAnimDuration = Duration(milliseconds: 320);
+  static const _scrollAnimCurve = Curves.easeOutCubic;
+
+  /// With [reverse: true], offset 0 = newest messages at the bottom.
+  void _scrollToBottom({bool animated = false}) {
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    final target = pos.minScrollExtent;
+    final from = pos.pixels;
+    if (!animated) {
+      if ((from - target).abs() > 1) pos.jumpTo(target);
+      return;
+    }
+    if ((from - target).abs() < 2) return;
+    pos.animateTo(
+      target,
+      duration: _scrollAnimDuration,
+      curve: _scrollAnimCurve,
+    );
+  }
+
+  /// When already at the bottom, [ensureVisible] does nothing — nudge up by the
+  /// new bubble height, then animate back to the end so the message slides in.
+  Future<bool> _revealNewMessageAtBottom() async {
+    if (!_scroll.hasClients || _messages.isEmpty) return false;
+    final pos = _scroll.position;
+    final target = pos.minScrollExtent;
+    if (pos.pixels > target + 2) return false;
+
+    var reveal = 40.0;
+    final ctx = _messageKey(_messages.last.id).currentContext;
+    if (ctx != null) {
+      final box = ctx.findRenderObject() as RenderBox?;
+      if (box != null && box.hasSize) reveal = box.size.height + 4;
+    }
+
+    final start = (target + reveal).clamp(target, pos.maxScrollExtent);
+    if ((start - pos.pixels).abs() < 2) return false;
+
+    pos.jumpTo(start);
+    await pos.animateTo(
+      target,
+      duration: _scrollAnimDuration,
+      curve: _scrollAnimCurve,
+    );
+    return true;
+  }
+
+  Future<void> _scrollToLatest({
+    bool animated = false,
+    bool revealIfWasAtBottom = false,
+  }) async {
+    if (!_scroll.hasClients || _messages.isEmpty) return;
+
+    if (animated) {
+      for (var attempt = 0; attempt < 4; attempt++) {
+        await Future<void>.delayed(Duration.zero);
+        if (!mounted || !_scroll.hasClients) return;
+
+        final pos = _scroll.position;
+        final atBottom = pos.pixels <= pos.minScrollExtent + 2;
+
+        if (revealIfWasAtBottom && atBottom) {
+          if (await _revealNewMessageAtBottom()) {
+            _updateBottomProximity();
+            return;
+          }
+        }
+
+        if (!atBottom) {
+          final ctx = _messageKey(_messages.last.id).currentContext;
+          if (ctx != null) {
+            await Scrollable.ensureVisible(
+              ctx,
+              duration: _scrollAnimDuration,
+              curve: _scrollAnimCurve,
+              alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+            );
+            _updateBottomProximity();
+            return;
+          }
+        }
+      }
+    }
+
+    _scrollToBottom(animated: animated);
+    _updateBottomProximity();
+  }
+
+  void _scheduleScrollToBottom({
+    bool animated = false,
+    bool force = false,
+    bool revealIfWasAtBottom = false,
+  }) {
     if (!force && !_stickToBottom && !_scrollAfterNextLayout) return;
     _scrollToBottomTimer?.cancel();
     _scrollToBottomTimer = Timer(const Duration(milliseconds: 32), () {
       if (!mounted) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
-        _scrollToBottom(animated: animated);
+        await _scrollToLatest(
+          animated: animated,
+          revealIfWasAtBottom: revealIfWasAtBottom,
+        );
         _scrollAfterNextLayout = false;
       });
     });
   }
 
-  Future<void> _reloadMessages({bool scrollToEnd = false}) async {
+  bool _messagesDiffer(List<DealMessage> a, List<DealMessage> b) {
+    if (a.length != b.length) return true;
+    if (a.isEmpty) return false;
+    return a.last.id != b.last.id;
+  }
+
+  Future<void> _reloadMessages({
+    bool scrollToEnd = false,
+    bool silent = false,
+  }) async {
     try {
+      if (scrollToEnd || _stickToBottom) {
+        _captureScrollBeforeMessageUpdate();
+      }
       final m = await DealsApi.fetchMessages(widget.dealId);
       if (!mounted) return;
+      final changed = _messagesDiffer(_messages, m);
+      if (!scrollToEnd && !changed) return;
+      final wasAtBottom = _wasAtBottomBeforeMessageUpdate();
       if (scrollToEnd) {
         _stickToBottom = true;
         _scrollAfterNextLayout = true;
       }
       setState(() => _messages = m);
-      if (scrollToEnd) {
-        _scheduleScrollToBottom(animated: true, force: true);
+      if (scrollToEnd ||
+          (wasAtBottom && changed) ||
+          (_stickToBottom && changed)) {
+        _scheduleScrollToBottom(
+          animated: true,
+          force: true,
+          revealIfWasAtBottom: wasAtBottom,
+        );
       }
-    } catch (_) {}
+    } catch (e) {
+      if (!silent) _showSnack(userFacingError(e));
+    }
   }
 
   Future<void> _send() async {
@@ -328,17 +622,21 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
     final text = _msgCtrl.text.trim();
     if (text.isEmpty || _sending) return;
     final replyId = _replyTo?.id;
+    final savedReply = _replyTo;
     setState(() {
       _sending = true;
       _replyTo = null;
     });
-    _msgCtrl.clear();
     try {
       await DealsApi.postMessage(widget.dealId, body: text, replyToId: replyId);
+      if (!mounted) return;
+      _msgCtrl.clear();
       await _reloadMessages(scrollToEnd: true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      _msgCtrl.text = text;
+      setState(() => _replyTo = savedReply);
+      _showSnack(userFacingError(e));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -349,12 +647,12 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
     if (pending == null || _sending) return;
     final caption = _msgCtrl.text.trim();
     final replyId = _replyTo?.id;
+    final savedReply = _replyTo;
     setState(() {
       _sending = true;
       _pendingPhoto = null;
       _replyTo = null;
     });
-    _msgCtrl.clear();
     try {
       await DealsApi.postMessageWithAttachment(
         widget.dealId,
@@ -363,11 +661,19 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
         body: caption,
         replyToId: replyId,
       );
+      if (!mounted) return;
+      _msgCtrl.clear();
+      _onMessageTextChanged();
       await _reloadMessages(scrollToEnd: true);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _pendingPhoto = pending);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      setState(() {
+        _pendingPhoto = pending;
+        _replyTo = savedReply;
+      });
+      if (caption.isNotEmpty) _msgCtrl.text = caption;
+      _onMessageTextChanged();
+      _showSnack(userFacingError(e));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -383,11 +689,11 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
 
     final caption = _msgCtrl.text.trim();
     final replyId = _replyTo?.id;
+    final savedReply = _replyTo;
     setState(() {
       _sending = true;
       _replyTo = null;
     });
-    _msgCtrl.clear();
     try {
       await DealsApi.postMessageWithAttachment(
         widget.dealId,
@@ -397,10 +703,15 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
         body: caption,
         replyToId: replyId,
       );
+      if (!mounted) return;
+      _msgCtrl.clear();
+      _onMessageTextChanged();
       await _reloadMessages(scrollToEnd: true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      setState(() => _replyTo = savedReply);
+      if (caption.isNotEmpty) _msgCtrl.text = caption;
+      _showSnack(userFacingError(e));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -470,6 +781,7 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
         aspectRatio: aspect,
       );
     });
+    _onMessageTextChanged();
     _scheduleScrollToBottom(animated: false);
   }
 
@@ -526,12 +838,18 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
 
   void _startReply(DealMessage m, RentalDeal d) {
     setState(() => _replyTo = m);
+    _scrollToMessage(m.id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _msgFocus.requestFocus();
+    });
   }
 
   String _senderLabel(DealMessage m, RentalDeal d) {
     if (m.senderId == d.ownerId) return d.ownerName;
     return d.renterName;
   }
+
+  String _opponentName(RentalDeal d) => d.isRenter ? d.ownerName : d.renterName;
 
   List<_ChatListEntry> _chatEntries(AuthUser? me) {
     final entries = <_ChatListEntry>[];
@@ -541,14 +859,16 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
       for (final bg in bubbleGroups) {
         for (var j = 0; j < bg.indices.length; j++) {
           final isLast = j == bg.indices.length - 1;
-          entries.add(_ChatListEntry(
-            messageIndex: bg.indices[j],
-            showTail: isLast,
-            compactBelow: !isLast,
-            compactEdgeTop: j > 0,
-            compactEdgeBottom: !isLast,
-            dayLabelForAnchor: firstOfDay ? day.label : null,
-          ));
+          entries.add(
+            _ChatListEntry(
+              messageIndex: bg.indices[j],
+              showTail: isLast,
+              compactBelow: !isLast,
+              compactEdgeTop: j > 0,
+              compactEdgeBottom: !isLast,
+              dayLabelForAnchor: firstOfDay ? day.label : null,
+            ),
+          );
           firstOfDay = false;
         }
       }
@@ -556,25 +876,41 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
     return entries;
   }
 
-  List<Widget> _chatSlivers(RentalDeal d, AuthUser? me) {
+  /// Top inset for collapsed deal overlay only — expanding deal draws over chat.
+  double _chatTopInset(RentalDeal d) {
+    var h = 104.0;
+    if (d.status == 'pending_owner' && d.isOwner) h += 60;
+    if (d.status == 'pending_owner' && d.isRenter) h += 52;
+    if (d.status == 'active' && d.isOwner) h += 52;
+    return h;
+  }
+
+  List<Widget> _chatSlivers(
+    RentalDeal d,
+    AuthUser? me, {
+    required double topInset,
+  }) {
     final entries = _chatEntries(me);
     final count = entries.length;
+    // reverse: true — first sliver = visual bottom (above input), last = visual top.
     return [
-      const SliverPadding(padding: EdgeInsets.only(bottom: 10)),
+      const SliverPadding(padding: EdgeInsets.only(bottom: 6)),
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 10),
         sliver: SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, idx) {
-              // Newest at idx 0 → sits at the bottom (reverse scroll).
-              final e = entries[count - 1 - idx];
-              final i = e.messageIndex;
-              final m = _messages[i];
-              final mine = me?.id == m.senderId;
-              final senderName = !mine && _showChatSenderName(_messages, i)
-                  ? _senderLabel(m, d)
-                  : null;
-              final bubble = ChatBubble(
+          delegate: SliverChildBuilderDelegate((context, idx) {
+            // Newest at idx 0 → sits at the bottom (reverse scroll).
+            final e = entries[count - 1 - idx];
+            final i = e.messageIndex;
+            final m = _messages[i];
+            final mine = me?.id == m.senderId;
+            final senderName = !mine && _showChatSenderName(_messages, i)
+                ? _senderLabel(m, d)
+                : null;
+            final highlighted = _flashMessageId == m.id;
+            final bubble = KeyedSubtree(
+              key: _messageKey(m.id),
+              child: ChatBubble(
                 text: m.body,
                 time: _fmtTime(m.createdAt),
                 isMine: mine,
@@ -587,25 +923,42 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
                 attachmentUrl: m.attachmentUrl,
                 attachmentType: m.attachmentType,
                 attachmentName: m.attachmentName,
+                highlighted: highlighted,
                 onLongPress: () => _startReply(m, d),
-                onImageTap: m.isImageAttachment ? () => _openChatGallery(m, d) : null,
-              );
-              if (e.dayLabelForAnchor == null) return bubble;
-              return KeyedSubtree(
-                key: _dateChipKey(e.dayLabelForAnchor!),
-                child: bubble,
-              );
-            },
-            childCount: count,
-          ),
+                onReplyTap: m.replyTo != null
+                    ? () => _scrollToMessage(m.replyTo!.id)
+                    : null,
+                onImageTap: m.isImageAttachment
+                    ? () => _openChatGallery(m, d)
+                    : null,
+                onFileTap: _isPreviewableFile(m)
+                    ? () => _openAttachment(m)
+                    : null,
+              ),
+            );
+            if (e.dayLabelForAnchor == null) return bubble;
+            return KeyedSubtree(
+              key: _dateChipKey(e.dayLabelForAnchor!),
+              child: bubble,
+            );
+          }, childCount: count),
         ),
       ),
-      const SliverPadding(padding: EdgeInsets.only(top: 12)),
+      SliverPadding(padding: EdgeInsets.only(top: topInset + 8)),
     ];
   }
 
-  Widget _buildChatList(RentalDeal d, AuthUser? me) {
-    if (_messages.isEmpty) return const ChatEmptyState();
+  Widget _buildChatList(
+    RentalDeal d,
+    AuthUser? me, {
+    required double topInset,
+  }) {
+    if (_messages.isEmpty) {
+      return _ShortTapKeyboardDismiss(
+        onDismiss: _dismissMessageKeyboard,
+        child: const ChatEmptyState(),
+      );
+    }
 
     _floatingDateLabel ??= _groupMessagesByDay(_messages).last.label;
 
@@ -618,7 +971,8 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
             controller: _scroll,
             reverse: true,
             cacheExtent: 800,
-            slivers: _chatSlivers(d, me),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
+            slivers: _chatSlivers(d, me, topInset: topInset),
           ),
         ),
         Positioned(
@@ -633,10 +987,36 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
               child: Center(
                 child: _floatingDateLabel == null
                     ? const SizedBox.shrink()
-                    : ChatDateChip(
-                        label: _floatingDateLabel!,
-                        sticky: true,
-                      ),
+                    : ChatDateChip(label: _floatingDateLabel!, sticky: true),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          right: 12,
+          bottom: 10,
+          child: IgnorePointer(
+            ignoring: !_showJumpToBottom,
+            child: AnimatedOpacity(
+              opacity: _showJumpToBottom ? 1 : 0,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              child: AnimatedScale(
+                scale: _showJumpToBottom ? 1 : 0.85,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 3,
+                  shadowColor: Colors.black.withValues(alpha: 0.12),
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    onPressed: _jumpToLatest,
+                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                    tooltip: 'Latest messages',
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
               ),
             ),
           ),
@@ -666,6 +1046,32 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
     };
   }
 
+  Future<void> _confirmMutate({
+    required String title,
+    required String message,
+    required Future<void> Function() call,
+  }) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await _mutate(call);
+  }
+
   Future<void> _mutate(Future<void> Function() call) async {
     try {
       await call();
@@ -673,10 +1079,10 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
       Navigator.of(context).pop(true);
     } on DealsApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.code)));
+      _showSnack(mapDealActionError(e.code));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      _showSnack(userFacingError(e));
     }
   }
 
@@ -713,88 +1119,254 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
     final me = _me;
     final hold = (d.holdAmountCents / 100).toStringAsFixed(2);
 
+    final opponent = _opponentName(d);
+
     return Scaffold(
-      appBar: AppBar(title: Text(d.vehicleTitle)),
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(d.vehicleTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(
+              opponent,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
       body: Column(
         children: [
-          // Deal summary card
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.circle, size: 10, color: _statusColor(context, d.status)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _statusLabel(d.status),
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
+          Expanded(
+            child: _ShortTapKeyboardDismiss(
+              onDismiss: _dismissMessageKeyboard,
+              child: Stack(
+                clipBehavior: Clip.hardEdge,
+                children: [
+                  Positioned.fill(
+                    child: ChatWallpaper(
+                      child: _buildChatList(d, me, topInset: _chatTopInset(d)),
                     ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Icon(Icons.lock_outline_rounded, size: 16, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 6),
-                        Text('Hold \$$hold', style: Theme.of(context).textTheme.bodyMedium),
-                        const SizedBox(width: 16),
-                        Icon(Icons.calendar_today_outlined, size: 16, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${d.dayCount} days',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_fmtDate(d.startDate)} → ${_fmtDate(d.endDate)}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                    ),
-                    const Divider(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _ParticipantCell(
-                            icon: Icons.directions_car_rounded,
-                            label: 'Renter',
-                            name: d.renterName,
-                            isMe: me?.id == d.renterId,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _ParticipantCell(
-                            icon: Icons.key_rounded,
-                            label: 'Owner',
-                            name: d.ownerName,
-                            isMe: me?.id == d.ownerId,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: _buildDealOverlay(context, d, me, hold, cs),
+                  ),
+                ],
               ),
             ),
           ),
 
-          // Action buttons
+          ColoredBox(
+            color: ChatWallpaper.backgroundColor,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_replyTo != null)
+                  ChatReplyBar(
+                    authorName: _senderLabel(_replyTo!, d),
+                    preview: _messagePreview(_replyTo!),
+                    onTap: () => _scrollToMessage(_replyTo!.id),
+                    onClose: () => setState(() => _replyTo = null),
+                  ),
+                if (_pendingPhoto != null)
+                  ChatPhotoPreviewBar(
+                    imageBytes: _pendingPhoto!.bytes,
+                    onClose: () {
+                      setState(() => _pendingPhoto = null);
+                      _onMessageTextChanged();
+                    },
+                    onTapPreview: () =>
+                        _showPhotoPreviewDialog(_pendingPhoto!.bytes),
+                  ),
+                ChatComposer(
+                  controller: _msgCtrl,
+                  focusNode: _msgFocus,
+                  hintText: _pendingPhoto != null
+                      ? 'Caption (optional)…'
+                      : (_replyTo != null ? 'Reply…' : 'Message…'),
+                  canSend: _canSend,
+                  sending: _sending,
+                  onSend: _send,
+                  onAttach: _showAttachSheet,
+                  onChanged: (_) => _onMessageTextChanged(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDealOverlay(
+    BuildContext context,
+    RentalDeal d,
+    AuthUser? me,
+    String hold,
+    ColorScheme cs,
+  ) {
+    return Material(
+      color: cs.surface,
+      elevation: 2,
+      shadowColor: Colors.black.withValues(alpha: 0.08),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: Card(
+              margin: EdgeInsets.zero,
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => setState(
+                        () => _dealInfoExpanded = !_dealInfoExpanded,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.circle,
+                              size: 10,
+                              color: _statusColor(context, d.status),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _statusLabel(d.status),
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            AnimatedRotation(
+                              turns: _dealInfoExpanded ? 0.5 : 0,
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeInOut,
+                              child: Icon(
+                                Icons.expand_more_rounded,
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (!_dealInfoExpanded)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                      child: Text(
+                        '${_fmtDate(d.startDate)} → ${_fmtDate(d.endDate)} · '
+                        '${d.dayCount} days · Hold \$$hold',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.topCenter,
+                    child: _dealInfoExpanded
+                        ? Padding(
+                            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.lock_outline_rounded,
+                                      size: 16,
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Hold \$$hold',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Icon(
+                                      Icons.calendar_today_outlined,
+                                      size: 16,
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '${d.dayCount} days',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${_fmtDate(d.startDate)} → ${_fmtDate(d.endDate)}',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: cs.onSurfaceVariant),
+                                ),
+                                const Divider(height: 16),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _ParticipantCell(
+                                        icon: Icons.directions_car_rounded,
+                                        label: 'Renter',
+                                        name: d.renterName,
+                                        isMe: me?.id == d.renterId,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: _ParticipantCell(
+                                        icon: Icons.key_rounded,
+                                        label: 'Owner',
+                                        name: d.ownerName,
+                                        isMe: me?.id == d.ownerId,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          )
+                        : const SizedBox(width: double.infinity),
+                  ),
+                ],
+              ),
+            ),
+          ),
           if (d.status == 'pending_owner' && d.isOwner) ...[
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Row(
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: () => _mutate(() => DealsApi.accept(d.id)),
+                      onPressed: () => _confirmMutate(
+                        title: 'Accept rental?',
+                        message:
+                            'The renter\'s security hold stays in place until the trip completes.',
+                        call: () => DealsApi.accept(d.id),
+                      ),
                       icon: const Icon(Icons.check_rounded),
                       label: const Text('Accept'),
                     ),
@@ -802,7 +1374,12 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => _mutate(() => DealsApi.decline(d.id)),
+                      onPressed: () => _confirmMutate(
+                        title: 'Decline request?',
+                        message:
+                            'The hold will be released back to the renter.',
+                        call: () => DealsApi.decline(d.id),
+                      ),
                       icon: const Icon(Icons.close_rounded),
                       label: const Text('Decline'),
                     ),
@@ -810,15 +1387,19 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 8),
           ],
           if (d.status == 'pending_owner' && d.isRenter)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () => _mutate(() => DealsApi.renterCancel(d.id)),
+                  onPressed: () => _confirmMutate(
+                    title: 'Cancel request?',
+                    message:
+                        'Your security hold will be refunded to your wallet.',
+                    call: () => DealsApi.renterCancel(d.id),
+                  ),
                   icon: const Icon(Icons.undo_rounded),
                   label: const Text('Cancel & refund hold'),
                 ),
@@ -826,113 +1407,22 @@ class _DealDetailScreenState extends State<DealDetailScreen> {
             ),
           if (d.status == 'active' && d.isOwner)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.tonalIcon(
-                  onPressed: () => _mutate(() => DealsApi.complete(d.id)),
+                  onPressed: () => _confirmMutate(
+                    title: 'Complete trip?',
+                    message:
+                        'Funds will be released to you and the rental will be marked completed.',
+                    call: () => DealsApi.complete(d.id),
+                  ),
                   icon: const Icon(Icons.flag_rounded),
                   label: const Text('Complete trip & release payout'),
                 ),
               ),
             ),
-
-          // Chat
-          Expanded(
-            child: ChatWallpaper(child: _buildChatList(d, me)),
-          ),
-
-          if (_replyTo != null)
-            ChatReplyBar(
-              authorName: _senderLabel(_replyTo!, d),
-              preview: _messagePreview(_replyTo!),
-              onClose: () => setState(() => _replyTo = null),
-            ),
-
-          if (_pendingPhoto != null)
-            ChatPhotoPreviewBar(
-              imageBytes: _pendingPhoto!.bytes,
-              onClose: () => setState(() => _pendingPhoto = null),
-              onTapPreview: () => _showPhotoPreviewDialog(_pendingPhoto!.bytes),
-            ),
-
-          // Message input
-          SafeArea(
-            top: false,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: cs.surface,
-                border: Border(
-                  top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.45)),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 12,
-                    offset: const Offset(0, -4),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 10, 12, 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    IconButton(
-                      onPressed: _sending ? null : _showAttachSheet,
-                      icon: const Icon(Icons.add_circle_outline_rounded),
-                      tooltip: 'Attach',
-                      iconSize: 28,
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: _msgCtrl,
-                        enabled: !_sending,
-                        minLines: 1,
-                        maxLines: 4,
-                        textCapitalization: TextCapitalization.sentences,
-                        decoration: AppInputs.chat(context).copyWith(
-                          fillColor: const Color(0xFFF0F2F8),
-                          filled: true,
-                          hintText: _pendingPhoto != null
-                              ? 'Caption (optional)…'
-                              : (_replyTo != null ? 'Reply…' : 'Message…'),
-                        ),
-                        onSubmitted: (_) => _send(),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Material(
-                      color: cs.primary,
-                      borderRadius: BorderRadius.circular(14),
-                      elevation: 0,
-                      child: InkWell(
-                        onTap: (_sending ||
-                                (_pendingPhoto == null &&
-                                    _msgCtrl.text.trim().isEmpty))
-                            ? null
-                            : _send,
-                        borderRadius: BorderRadius.circular(14),
-                        child: SizedBox(
-                          width: 48,
-                          height: 48,
-                          child: _sending
-                              ? Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: cs.onPrimary,
-                                  ),
-                                )
-                              : const Icon(Icons.send_rounded, color: Colors.white, size: 22),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -949,6 +1439,67 @@ class _PendingPhoto {
   final Uint8List bytes;
   final String filename;
   final double aspectRatio;
+}
+
+/// Dismisses keyboard on a quick tap; ignores drags and long presses.
+class _ShortTapKeyboardDismiss extends StatefulWidget {
+  const _ShortTapKeyboardDismiss({
+    required this.onDismiss,
+    required this.child,
+  });
+
+  final VoidCallback onDismiss;
+  final Widget child;
+
+  @override
+  State<_ShortTapKeyboardDismiss> createState() =>
+      _ShortTapKeyboardDismissState();
+}
+
+class _ShortTapKeyboardDismissState extends State<_ShortTapKeyboardDismiss> {
+  static const _maxTapDuration = Duration(milliseconds: 220);
+  static const _maxMovement = 12.0;
+
+  DateTime? _downAt;
+  Offset? _downGlobal;
+  bool _movedTooMuch = false;
+
+  void _reset() {
+    _downAt = null;
+    _downGlobal = null;
+    _movedTooMuch = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (e) {
+        _downAt = DateTime.now();
+        _downGlobal = e.position;
+        _movedTooMuch = false;
+      },
+      onPointerMove: (e) {
+        final start = _downGlobal;
+        if (start == null || _movedTooMuch) return;
+        if ((e.position - start).distance > _maxMovement) {
+          _movedTooMuch = true;
+        }
+      },
+      onPointerUp: (e) {
+        final downAt = _downAt;
+        final downGlobal = _downGlobal;
+        final moved = _movedTooMuch;
+        _reset();
+        if (downAt == null || downGlobal == null || moved) return;
+        if (DateTime.now().difference(downAt) > _maxTapDuration) return;
+        if ((e.position - downGlobal).distance > _maxMovement) return;
+        widget.onDismiss();
+      },
+      onPointerCancel: (_) => _reset(),
+      child: widget.child,
+    );
+  }
 }
 
 class _ParticipantCell extends StatelessWidget {
@@ -975,10 +1526,17 @@ class _ParticipantCell extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
+              Text(
+                label,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
               Text(
                 isMe ? '$name (you)' : name,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
                 overflow: TextOverflow.ellipsis,
               ),
             ],

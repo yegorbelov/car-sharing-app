@@ -40,7 +40,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       await AuthStorage.saveSession(accessToken: token, user: fresh);
       setState(() => _user = fresh);
-    } catch (_) {}
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not refresh profile: $e')),
+      );
+    }
+  }
+
+  void _comingSoon(String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$feature — coming soon')),
+    );
   }
 
   Future<void> _pickAvatar() async {
@@ -128,21 +139,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         icon: Icons.notifications_outlined,
                         iconColor: cs.tertiary,
                         title: 'Notifications',
-                        onTap: () {},
+                        onTap: () => _comingSoon('Notifications'),
                       ),
                       const Divider(),
                       _MenuItem(
                         icon: Icons.lock_outline_rounded,
                         iconColor: cs.secondary,
                         title: 'Security',
-                        onTap: () {},
+                        onTap: () => _comingSoon('Security'),
                       ),
                       const Divider(),
                       _MenuItem(
                         icon: Icons.help_outline_rounded,
                         iconColor: cs.onSurfaceVariant,
                         title: 'Help & Support',
-                        onTap: () {},
+                        onTap: () => _comingSoon('Help & Support'),
                       ),
                     ],
                   ),

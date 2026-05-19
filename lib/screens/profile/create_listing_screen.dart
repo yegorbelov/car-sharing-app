@@ -141,15 +141,27 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       if (!context.mounted) return;
 
       final vehicleId = (result['id'] as num).toInt();
+      var failedPhotos = 0;
       for (final path in _photoPaths) {
         try {
           await VehiclesApi.uploadVehiclePhoto(vehicleId: vehicleId, filePath: path);
         } catch (_) {
-          // Non-fatal: listing exists; user can add more photos later.
+          failedPhotos++;
         }
       }
 
       if (!context.mounted) return;
+      if (failedPhotos > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              failedPhotos == _photoPaths.length
+                  ? 'Listing created, but photos could not be uploaded. Add them from the car page.'
+                  : 'Listing created, but $failedPhotos photo(s) failed to upload.',
+            ),
+          ),
+        );
+      }
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!context.mounted) return;

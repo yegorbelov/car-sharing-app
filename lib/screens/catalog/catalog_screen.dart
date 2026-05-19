@@ -9,10 +9,16 @@ import '../../services/vehicles_api.dart';
 import 'vehicle_detail_screen.dart';
 
 class CatalogScreen extends StatefulWidget {
-  const CatalogScreen({super.key, required this.tabVisible, this.onSignedIn});
+  const CatalogScreen({
+    super.key,
+    required this.tabVisible,
+    this.onSignedIn,
+    this.onBookingCreated,
+  });
 
   final bool tabVisible;
   final VoidCallback? onSignedIn;
+  final VoidCallback? onBookingCreated;
 
   @override
   State<CatalogScreen> createState() => _CatalogScreenState();
@@ -261,6 +267,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   builder: (_) => VehicleDetailScreen(
                     vehicle: c,
                     onSignedIn: widget.onSignedIn,
+                    onBookingCreated: widget.onBookingCreated,
                   ),
                 ),
               ),

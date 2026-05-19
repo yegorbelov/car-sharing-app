@@ -17,6 +17,17 @@ class AuthApiException implements Exception {
 class AuthApi {
   AuthApi._();
 
+  /// Called when an authenticated request gets a 401.
+  static void Function()? onUnauthorized;
+
+  static Never _throwIfUnauthorized(http.Response res) {
+    if (res.statusCode == 401) {
+      onUnauthorized?.call();
+      throw AuthApiException(401, 'session_expired');
+    }
+    throw AuthApiException(res.statusCode, _errBody(res.body));
+  }
+
   static Map<String, String> _jsonHeaders([String? bearer]) {
     final h = <String, String>{
       'Content-Type': 'application/json',
@@ -86,9 +97,7 @@ class AuthApi {
       headers: _jsonHeaders(token),
       body: jsonEncode({'fullName': fullName.trim()}),
     );
-    if (res.statusCode != 200) {
-      throw AuthApiException(res.statusCode, _errBody(res.body));
-    }
+    if (res.statusCode != 200) _throwIfUnauthorized(res);
     final map = jsonDecode(res.body) as Map<String, dynamic>;
     final u = map['user'] as Map<String, dynamic>?;
     if (u == null) {
@@ -100,9 +109,7 @@ class AuthApi {
   static Future<AuthUser> fetchMe(String token) async {
     final uri = Uri.parse('${apiBaseUrl()}/api/v1/auth/me');
     final res = await http.get(uri, headers: _jsonHeaders(token));
-    if (res.statusCode != 200) {
-      throw AuthApiException(res.statusCode, _errBody(res.body));
-    }
+    if (res.statusCode != 200) _throwIfUnauthorized(res);
     final map = jsonDecode(res.body) as Map<String, dynamic>;
     final u = map['user'] as Map<String, dynamic>?;
     if (u == null) {
@@ -124,9 +131,7 @@ class AuthApi {
 
     final streamed = await request.send();
     final res = await http.Response.fromStream(streamed);
-    if (res.statusCode != 200) {
-      throw AuthApiException(res.statusCode, _errBody(res.body));
-    }
+    if (res.statusCode != 200) _throwIfUnauthorized(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     return (body['avatarUrl'] as String?) ?? '';
   }
